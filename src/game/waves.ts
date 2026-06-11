@@ -6,6 +6,7 @@ export const getWaveConfig = (wave: number): WaveConfig => {
   return {
     attackCooldown: Math.max(1.9, 4.8 - Math.floor(wave / 3) * 0.35),
     count: Math.min(6 + Math.floor(wave * 1.45), 34),
+    deathStarCount: wave >= 5 ? Math.min(1 + Math.floor((wave - 5) / 5), 3) : 0,
     enemyHp: 1 + Math.floor(wave / 4),
     enemySpeed: 2.7 + Math.min(wave, 16) * 0.12,
     groups: wave >= 7 ? 3 : wave >= 3 ? 2 : 1,

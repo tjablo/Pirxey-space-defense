@@ -69,7 +69,7 @@ export const WEAPON_CATALOG: Record<WeaponId, WeaponDefinition> = {
     slot: "secondary",
     price: 165,
     cooldown: 0.92,
-    description: "Right-click missile salvo that tracks the nearest hostile and detonates on contact."
+    description: "Right-click missile that tracks a hostile and can clip one target packed tightly nearby."
   },
   "plasma-orb": {
     id: "plasma-orb",

@@ -163,7 +163,7 @@ canvas.is-pointer-locked {
 
 .round-banner {
   position: absolute;
-  top: 104px;
+  top: 176px;
   left: 50%;
   z-index: 26;
   min-width: 190px;
@@ -1167,7 +1167,7 @@ canvas.is-pointer-locked {
   }
 
   .round-banner {
-    top: 142px;
+    top: 190px;
     min-width: 164px;
     padding: 10px 14px;
   }

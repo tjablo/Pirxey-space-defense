@@ -26,6 +26,7 @@ import type { ServicePlanet } from "../data/services";
 import { createGameAudio } from "../game/audio";
 import {
   attachShipCannons,
+  createDeathStarBoss,
   createEnemyBug,
   createEnemyShot,
   createExplosion,
@@ -797,6 +798,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     const cameraLookAt = new THREE.Vector3();
     const shipWorld = new THREE.Vector3();
     const shipAim = new THREE.Vector3();
+    const shipRight = new THREE.Vector3();
     const avoidanceNormal = new THREE.Vector3();
     const dockOffset = new THREE.Vector3();
     const cameraOffset = new THREE.Vector3();
@@ -807,6 +809,9 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     const projectileDirection = new THREE.Vector3();
     const projectilePosition = new THREE.Vector3();
     const muzzleOffset = new THREE.Vector3();
+    const enemyMuzzleOffset = new THREE.Vector3();
+    const enemyShotTarget = new THREE.Vector3();
+    const enemyShotSpread = new THREE.Vector3();
     const missileForward = new THREE.Vector3();
     const missileTargetOffset = new THREE.Vector3();
     const blastOrigin = new THREE.Vector3();
@@ -1217,7 +1222,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       }
 
       for (const enemy of enemies) {
-        if (enemy.targetPlanetId !== planet.service.id) {
+        if (enemy.targetMode !== "planet" || enemy.targetPlanetId !== planet.service.id) {
           continue;
         }
         if (replacement) {
@@ -1278,7 +1283,12 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
 
     const removeEnemy = (enemy: EnemyRuntime) => {
       enemy.group.getWorldPosition(explosionPosition);
-      addExplosion(explosionPosition, 0xd74721, 18, 0.82);
+      addExplosion(
+        explosionPosition,
+        enemy.kind === "death-star" ? 0xff2f2f : 0xd74721,
+        enemy.kind === "death-star" ? 54 : 18,
+        enemy.kind === "death-star" ? 2.5 : 0.82
+      );
       audioRef.current.explosion();
       scene.remove(enemy.group);
       disposeObject(enemy.group);
@@ -1288,21 +1298,27 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       }
     };
 
-    const grantKillReward = () => {
-      const reward = 14 + currentWave * 3;
-      score += 10 + currentWave;
+    const grantKillReward = (enemy: EnemyRuntime) => {
+      const reward = enemy.reward + currentWave * 3;
+      score += (enemy.kind === "death-star" ? 40 : 10) + currentWave;
       creditsRef.current += reward;
       setCredits(creditsRef.current);
     };
 
     const destroyEnemy = (enemy: EnemyRuntime) => {
-      grantKillReward();
+      grantKillReward(enemy);
       removeEnemy(enemy);
     };
 
     const aggroPlanetGroup = (planetId: string, origin: THREE.Vector3, sourceEnemyId: number) => {
       const candidates = enemies
-        .filter((enemy) => enemy.targetPlanetId === planetId && enemy.id !== sourceEnemyId && enemy.state === "raiding")
+        .filter(
+          (enemy) =>
+            enemy.targetMode === "planet" &&
+            enemy.targetPlanetId === planetId &&
+            enemy.id !== sourceEnemyId &&
+            enemy.state === "raiding"
+        )
         .map((enemy) => ({
           distance: enemy.group.position.distanceTo(origin),
           enemy
@@ -1330,8 +1346,10 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
 
     const damageEnemy = (enemy: EnemyRuntime, damage: number, origin: THREE.Vector3) => {
       enemy.hp -= damage;
-      enemy.state = "aggro";
-      aggroPlanetGroup(enemy.targetPlanetId, origin, enemy.id);
+      if (enemy.targetMode === "planet") {
+        enemy.state = "aggro";
+        aggroPlanetGroup(enemy.targetPlanetId, origin, enemy.id);
+      }
       if (enemy.hp <= 0) {
         destroyEnemy(enemy);
       }
@@ -1341,12 +1359,34 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       blastOrigin.copy(projectile.mesh.position);
       const radius = projectile.blastRadius ?? 0;
       const isPlasma = projectile.weaponId === "plasma-orb";
+      const isHomingMissile = projectile.weaponId === "homing-missiles";
       addExplosion(
         blastOrigin,
         projectile.impactColor ?? 0x7dffea,
         isPlasma ? 64 : 34,
         isPlasma ? 3.25 : radius ? radius * 0.34 : 0.9
       );
+      if (isHomingMissile) {
+        const missileTargets = enemies
+          .map((enemy) => ({
+            distance: enemy.group.position.distanceTo(blastOrigin),
+            enemy
+          }))
+          .filter(({ distance, enemy }) => distance <= radius + enemy.hitRadius)
+          .sort((a, b) => a.distance - b.distance)
+          .slice(0, 2);
+
+        for (const { distance, enemy } of missileTargets) {
+          const secondTarget = missileTargets[0]?.enemy.id !== enemy.id;
+          if (secondTarget && distance > 1.55 + enemy.hitRadius * 0.35) {
+            continue;
+          }
+          damageEnemy(enemy, projectile.damage, blastOrigin);
+        }
+        removeProjectile(projectile);
+        return;
+      }
+
       for (let enemyIndex = enemies.length - 1; enemyIndex >= 0; enemyIndex -= 1) {
         const enemy = enemies[enemyIndex];
         const distance = enemy.group.position.distanceTo(blastOrigin);
@@ -1475,15 +1515,41 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       audioRef.current.shoot();
     };
 
-    const spawnEnemyShot = (enemy: EnemyRuntime, target: THREE.Vector3) => {
+    const spawnEnemyShot = (enemy: EnemyRuntime, target: THREE.Vector3, canDamagePlanets = true) => {
       projectileDirection.copy(target).sub(enemy.group.position).normalize();
       projectilePosition.copy(enemy.group.position).addScaledVector(projectileDirection, 0.9);
-      const shot = createEnemyShot(projectilePosition, projectileDirection, currentWave);
+      const shot = createEnemyShot(projectilePosition, projectileDirection, currentWave, { canDamagePlanets });
       projectiles.push(shot);
       scene.add(shot.mesh);
     };
 
-    const resolveEnemyPlanetAvoidance = (enemy: EnemyRuntime, primaryTarget: PlanetRuntime, frameDelta: number) => {
+    const spawnDeathStarVolley = (enemy: EnemyRuntime, target: THREE.Vector3, elapsedTime: number) => {
+      const ports = enemy.weaponPorts ?? [new THREE.Vector3(0, 0, -enemy.hitRadius)];
+      for (let portIndex = 0; portIndex < ports.length; portIndex += 1) {
+        const port = ports[portIndex];
+        enemyMuzzleOffset.copy(port).applyQuaternion(enemy.group.quaternion);
+        projectilePosition.copy(enemy.group.position).add(enemyMuzzleOffset);
+        enemyShotSpread
+          .set(
+            Math.sin(elapsedTime * 1.7 + enemy.id + portIndex) * 0.46,
+            Math.cos(elapsedTime * 1.25 + portIndex * 2.1) * 0.3,
+            Math.cos(elapsedTime * 1.45 + enemy.id * 0.7 + portIndex) * 0.46
+          )
+          .multiplyScalar(0.62);
+        enemyShotTarget.copy(target).add(enemyShotSpread);
+        projectileDirection.copy(enemyShotTarget).sub(projectilePosition).normalize();
+        const shot = createEnemyShot(projectilePosition, projectileDirection, currentWave, {
+          canDamagePlanets: false,
+          damage: 1.15,
+          radius: 0.46,
+          speedMultiplier: 1.16
+        });
+        projectiles.push(shot);
+        scene.add(shot.mesh);
+      }
+    };
+
+    const resolveEnemyPlanetAvoidance = (enemy: EnemyRuntime, primaryTarget: PlanetRuntime | null, frameDelta: number) => {
       for (const planet of planetRuntimes) {
         if (planet.destroyed) {
           continue;
@@ -1492,8 +1558,9 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
         planet.group.getWorldPosition(planet.worldPosition);
         enemyPlanetOffset.copy(enemy.group.position).sub(planet.worldPosition);
         let distance = enemyPlanetOffset.length();
-        const bodyClearance = planet.service.size + 1.18;
-        const steeringRadius = planet.service.size + (planet.service.id === primaryTarget.service.id ? 3.35 : 4.25);
+        const bodyClearance = planet.service.size + enemy.hitRadius + (enemy.kind === "death-star" ? 0.85 : 0.43);
+        const steeringRadius =
+          planet.service.size + (planet.service.id === primaryTarget?.service.id ? 3.35 : 4.25) + enemy.hitRadius * 0.65;
 
         if (distance < 0.001) {
           enemyPlanetOffset.set(1, 0.15, 0).normalize();
@@ -1521,6 +1588,36 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
         const orbitSide = Math.sin(enemy.id * 7.31 + planet.service.phase * 11.7) >= 0 ? 1 : -1;
         enemy.group.position.addScaledVector(enemyPlanetTangent, orbitSide * influence * enemy.speed * frameDelta * 1.05);
         enemy.group.position.addScaledVector(enemyPlanetOffset, influence * enemy.speed * frameDelta * 0.36);
+      }
+
+      enemyPlanetOffset.copy(enemy.group.position);
+      let sunDistance = enemyPlanetOffset.length();
+      const sunBodyClearance = 6.2 + enemy.hitRadius + 0.95;
+      const sunSteeringRadius = sunBodyClearance + 5.4 + enemy.hitRadius * 0.6;
+
+      if (sunDistance < 0.001) {
+        enemyPlanetOffset.set(1, 0.18, 0).normalize();
+        sunDistance = 0.001;
+      } else {
+        enemyPlanetOffset.divideScalar(sunDistance);
+      }
+
+      if (sunDistance < sunBodyClearance) {
+        enemy.group.position.copy(enemyPlanetOffset).multiplyScalar(sunBodyClearance);
+        sunDistance = sunBodyClearance;
+      }
+
+      if (sunDistance < sunSteeringRadius && enemyDirection.dot(enemyPlanetOffset) < 0) {
+        const influence = clamp((sunSteeringRadius - sunDistance) / Math.max(0.001, sunSteeringRadius - sunBodyClearance), 0, 1);
+        enemyPlanetTangent.set(-enemyPlanetOffset.z, 0, enemyPlanetOffset.x);
+        if (enemyPlanetTangent.lengthSq() < 0.001) {
+          enemyPlanetTangent.set(1, 0, 0);
+        } else {
+          enemyPlanetTangent.normalize();
+        }
+        const orbitSide = Math.sin(enemy.id * 4.71 + currentWave * 0.37) >= 0 ? 1 : -1;
+        enemy.group.position.addScaledVector(enemyPlanetTangent, orbitSide * influence * enemy.speed * frameDelta * 1.25);
+        enemy.group.position.addScaledVector(enemyPlanetOffset, influence * enemy.speed * frameDelta * 0.7);
       }
     };
 
@@ -1558,6 +1655,20 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
           enemies.push(enemy);
           scene.add(enemy.group);
         }
+      }
+
+      for (let bossIndex = 0; bossIndex < config.deathStarCount; bossIndex += 1) {
+        const anchorRuntime = targetPlanets[bossIndex % targetPlanets.length] ?? availablePlanets[0];
+        anchorRuntime.group.getWorldPosition(spawnTarget);
+        const bossPosition = createSpawnPosition(
+          spawnTarget,
+          currentWave * 3 + 41,
+          bossIndex + config.count,
+          Math.max(1, config.deathStarCount + 1)
+        ).add(new THREE.Vector3(0, 4 + bossIndex * 1.7, 0));
+        const boss = createDeathStarBoss(bossPosition, anchorRuntime.service.id, config, currentWave);
+        enemies.push(boss);
+        scene.add(boss.group);
       }
     };
 
@@ -1910,32 +2021,44 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
 
       if (phase === "Running") {
         for (const enemy of enemies) {
-          let targetRuntime =
-            planetRuntimes.find((planet) => planet.service.id === enemy.targetPlanetId && !planet.destroyed) ??
-            findClosestActivePlanet(enemy.group.position);
-          if (targetRuntime) {
-            enemy.targetPlanetId = targetRuntime.service.id;
-            targetRuntime.group.getWorldPosition(targetRuntime.worldPosition);
-          } else {
-            targetRuntime = selectedRuntime;
-            enemy.state = "aggro";
+          const huntsShip = enemy.targetMode === "ship";
+          let targetRuntime: PlanetRuntime | null = null;
+
+          if (!huntsShip) {
+            targetRuntime =
+              planetRuntimes.find((planet) => planet.service.id === enemy.targetPlanetId && !planet.destroyed) ??
+              findClosestActivePlanet(enemy.group.position);
+            if (targetRuntime) {
+              enemy.targetPlanetId = targetRuntime.service.id;
+              targetRuntime.group.getWorldPosition(targetRuntime.worldPosition);
+            } else {
+              enemy.state = "aggro";
+            }
           }
-          const combatTarget = enemy.state === "aggro" ? ship.position : targetRuntime.worldPosition;
+
+          const combatTarget =
+            huntsShip || enemy.state === "aggro" || !targetRuntime ? ship.position : targetRuntime.worldPosition;
           enemyDirection.copy(combatTarget).sub(enemy.group.position);
           const targetDistance = enemyDirection.length();
           if (targetDistance > 0.001) {
             enemyDirection.divideScalar(targetDistance);
           }
 
-          const desiredDistance = enemy.state === "aggro" ? 8.5 : targetRuntime.service.size + 2.8;
+          const desiredDistance =
+            huntsShip || enemy.state === "aggro" || !targetRuntime ? enemy.preferredDistance : targetRuntime.service.size + 2.8;
           if (targetDistance > desiredDistance) {
             enemy.group.position.addScaledVector(enemyDirection, enemy.speed * delta);
-          } else if (enemy.state === "raiding") {
+          } else if (!huntsShip && enemy.state === "raiding" && targetRuntime) {
             damagePlanet(targetRuntime, delta * 1.2);
             enemy.group.position.addScaledVector(enemyDirection, Math.sin(elapsed * 2 + enemy.id) * delta * 0.35);
           } else {
             enemyLateral.set(-enemyDirection.z, 0, enemyDirection.x).normalize();
-            enemy.group.position.addScaledVector(enemyLateral, Math.sin(elapsed + enemy.id) * delta * 1.1);
+            enemy.group.position.addScaledVector(
+              enemyLateral,
+              Math.sin(elapsed * (enemy.kind === "death-star" ? 0.72 : 1) + enemy.id) *
+                delta *
+                (enemy.kind === "death-star" ? 1.55 : 1.1)
+            );
           }
 
           for (const other of enemies) {
@@ -1944,7 +2067,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
             }
             enemySeparation.copy(enemy.group.position).sub(other.group.position);
             const separationDistance = enemySeparation.length();
-            const minimumSeparation = enemy.state === "aggro" || other.state === "aggro" ? 2.15 : 1.65;
+            const minimumSeparation = Math.max(1.65, (enemy.separationRadius + other.separationRadius) * 0.5);
             if (separationDistance > 0.001 && separationDistance < minimumSeparation) {
               enemy.group.position.addScaledVector(
                 enemySeparation.divideScalar(separationDistance),
@@ -1953,15 +2076,24 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
             }
           }
 
-          enemy.group.position.y += Math.sin(elapsed * 2.2 + enemy.id) * delta * 0.18;
+          enemy.group.position.y +=
+            Math.sin(elapsed * (enemy.kind === "death-star" ? 1.2 : 2.2) + enemy.id) * delta * 0.18;
           resolveEnemyPlanetAvoidance(enemy, targetRuntime, delta);
           enemy.group.lookAt(combatTarget);
           enemy.group.rotateY(Math.PI);
           enemy.attackCooldown -= delta;
           if (enemy.attackCooldown <= 0) {
-            const shotTarget = enemy.state === "aggro" ? ship.position : targetRuntime.worldPosition;
-            spawnEnemyShot(enemy, shotTarget);
-            enemy.attackCooldown = getWaveConfig(currentWave).attackCooldown + (enemy.id % 5) * 0.22;
+            const shotTarget = huntsShip || enemy.state === "aggro" || !targetRuntime ? ship.position : targetRuntime.worldPosition;
+            if (enemy.kind === "death-star") {
+              spawnDeathStarVolley(enemy, shotTarget, elapsed);
+            } else {
+              spawnEnemyShot(enemy, shotTarget);
+            }
+            const waveConfig = getWaveConfig(currentWave);
+            enemy.attackCooldown =
+              enemy.kind === "death-star"
+                ? Math.max(1.05, waveConfig.attackCooldown * 0.42) + (enemy.id % 3) * 0.18
+                : waveConfig.attackCooldown + (enemy.id % 5) * 0.22;
           }
         }
       }
@@ -1969,6 +2101,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       const boostPressed = keys.has("ShiftLeft") || keys.has("ShiftRight");
       const manualThrusting =
         !dockedTarget.active && !autopilotTarget.active && !shipDestroyed && keys.has("KeyW");
+      let dodgeInput = 0;
 
       if (dockedTarget.active) {
         const dockRuntime =
@@ -1995,35 +2128,40 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
           autopilotTarget.active = false;
           setMode("Manual");
         } else {
-        targetRuntime.group.getWorldPosition(targetWorld);
-        const awayFromSun = targetWorld.clone().normalize();
-        desired.copy(targetWorld).addScaledVector(awayFromSun, targetRuntime.service.size + 3.4);
-        desired.y += 1.4;
+          targetRuntime.group.getWorldPosition(targetWorld);
+          const awayFromSun = targetWorld.clone().normalize();
+          desired.copy(targetWorld).addScaledVector(awayFromSun, targetRuntime.service.size + 3.4);
+          desired.y += 1.4;
 
-        const distance = ship.position.distanceTo(desired);
-        const direction = desired.clone().sub(ship.position).normalize();
-        const targetSpeed = clamp(distance * 0.5, 3.5, 16);
-        shipAim.copy(ship.position).add(direction);
-        aimShipAt(shipAim, 1 - Math.pow(0.006, delta));
-        forward.set(0, 0, -1).applyQuaternion(ship.quaternion).normalize();
-        velocity.lerp(forward.multiplyScalar(targetSpeed), 1 - Math.pow(0.035, delta));
+          const distance = ship.position.distanceTo(desired);
+          const direction = desired.clone().sub(ship.position).normalize();
+          const targetSpeed = clamp(distance * 0.5, 3.5, 16);
+          shipAim.copy(ship.position).add(direction);
+          aimShipAt(shipAim, 1 - Math.pow(0.006, delta));
+          forward.set(0, 0, -1).applyQuaternion(ship.quaternion).normalize();
+          velocity.lerp(forward.multiplyScalar(targetSpeed), 1 - Math.pow(0.035, delta));
 
-        if (distance < 2.4) {
-          autopilotTarget.active = false;
-          velocity.multiplyScalar(0.25);
-          setMode("Manual");
-        }
+          if (distance < 2.4) {
+            autopilotTarget.active = false;
+            velocity.multiplyScalar(0.25);
+            setMode("Manual");
+          }
         }
       } else {
         const yaw = (keys.has("KeyA") ? 1 : 0) - (keys.has("KeyD") ? 1 : 0);
         const pitch = (keys.has("ArrowDown") ? 1 : 0) - (keys.has("ArrowUp") ? 1 : 0);
         const roll = (keys.has("KeyQ") ? 1 : 0) - (keys.has("KeyE") ? 1 : 0);
+        dodgeInput = roll;
         ship.rotation.y += yaw * delta * 1.42;
         ship.rotation.x = clamp(ship.rotation.x + pitch * delta * 1.05, -0.98, 0.98);
-        ship.rotation.z += roll * delta * 1.55;
-        ship.rotation.z *= 1 - delta * 0.54;
+        ship.rotation.z += roll * delta * 2.15;
+        ship.rotation.z *= 1 - delta * 0.62;
 
         forward.set(0, 0, -1).applyQuaternion(ship.quaternion).normalize();
+        if (roll !== 0) {
+          shipRight.set(1, 0, 0).applyQuaternion(ship.quaternion).normalize();
+          velocity.addScaledVector(shipRight, -roll * (boostPressed ? 28 : 20) * delta);
+        }
         const thrust = manualThrusting ? (boostPressed ? 32 : 17) : 0;
         if (thrust > 0) {
           velocity.addScaledVector(forward, thrust * delta);
@@ -2040,7 +2178,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       }
 
       velocity.multiplyScalar(1 - delta * 0.12);
-      velocity.clampLength(0, 34);
+      velocity.clampLength(0, dodgeInput !== 0 ? (boostPressed ? 42 : 38) : 34);
       thrustHold = manualThrusting ? clamp(thrustHold + delta * (boostPressed ? 0.92 : 0.72), 0, 1) : Math.max(0, thrustHold - delta * 2.8);
       const speedRatio = clamp(velocity.length() / 34, 0, 1);
       const targetFlamePower = manualThrusting
@@ -2135,7 +2273,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
             for (let enemyIndex = enemies.length - 1; enemyIndex >= 0; enemyIndex -= 1) {
               const enemy = enemies[enemyIndex];
               const hitDistance = projectile.mesh.position.distanceTo(enemy.group.position);
-              if (hitDistance < projectile.radius + 0.75) {
+              if (hitDistance < projectile.radius + enemy.hitRadius) {
                 if (projectile.blastRadius) {
                   detonatePlayerProjectile(projectile);
                 } else {
@@ -2155,15 +2293,17 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
               continue;
             }
 
-            for (const runtime of planetRuntimes) {
-              if (runtime.destroyed) {
-                continue;
-              }
-              runtime.group.getWorldPosition(runtime.worldPosition);
-              if (projectile.mesh.position.distanceTo(runtime.worldPosition) < runtime.service.size + projectile.radius) {
-                damagePlanet(runtime, projectile.damage * 4);
-                removeProjectile(projectile);
-                break;
+            if (projectile.canDamagePlanets !== false) {
+              for (const runtime of planetRuntimes) {
+                if (runtime.destroyed) {
+                  continue;
+                }
+                runtime.group.getWorldPosition(runtime.worldPosition);
+                if (projectile.mesh.position.distanceTo(runtime.worldPosition) < runtime.service.size + projectile.radius) {
+                  damagePlanet(runtime, projectile.damage * 4);
+                  removeProjectile(projectile);
+                  break;
+                }
               }
             }
           }
@@ -2255,10 +2395,16 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
           selectedRuntime;
         const threatNames = Array.from(
           new Set(
-            enemies
-              .map((enemy) => planetRuntimes.find((planet) => planet.service.id === enemy.targetPlanetId && !planet.destroyed))
-              .filter((planet): planet is PlanetRuntime => Boolean(planet))
-              .map((planet) => planet.service.name)
+            [
+              ...enemies
+                .filter((enemy) => enemy.targetMode === "planet")
+                .map((enemy) =>
+                  planetRuntimes.find((planet) => planet.service.id === enemy.targetPlanetId && !planet.destroyed)
+                )
+                .filter((planet): planet is PlanetRuntime => Boolean(planet))
+                .map((planet) => planet.service.name),
+              ...(enemies.some((enemy) => enemy.targetMode === "ship") ? ["Your ship"] : [])
+            ]
           )
         );
         const threat =

@@ -35,6 +35,13 @@ type EnemyShotAssets = {
   tailMaterial: THREE.MeshBasicMaterial;
 };
 
+type EnemyShotOptions = {
+  canDamagePlanets?: boolean;
+  damage?: number;
+  radius?: number;
+  speedMultiplier?: number;
+};
+
 type LaserAssets = {
   beamGeometry: THREE.CapsuleGeometry;
   beamMaterial: THREE.MeshBasicMaterial;
@@ -71,12 +78,27 @@ type EnemyBugAssets = {
   threatGlowMaterial: THREE.SpriteMaterial;
 };
 
+type DeathStarAssets = {
+  bodyGeometry: THREE.SphereGeometry;
+  bodyMaterial: THREE.MeshStandardMaterial;
+  cannonGeometry: THREE.CylinderGeometry;
+  cannonMaterial: THREE.MeshStandardMaterial;
+  eyeGeometry: THREE.SphereGeometry;
+  eyeMaterial: THREE.MeshBasicMaterial;
+  eyeSocketGeometry: THREE.TorusGeometry;
+  eyeSocketMaterial: THREE.MeshStandardMaterial;
+  glowMaterial: THREE.SpriteMaterial;
+  ringGeometry: THREE.TorusGeometry;
+  ringMaterial: THREE.MeshBasicMaterial;
+};
+
 let playerBoltAssets: PlayerBoltAssets | null = null;
 let enemyShotAssets: EnemyShotAssets | null = null;
 let laserAssets: LaserAssets | null = null;
 let missileAssets: MissileAssets | null = null;
 let plasmaAssets: PlasmaAssets | null = null;
 let enemyBugAssets: EnemyBugAssets | null = null;
+let deathStarAssets: DeathStarAssets | null = null;
 
 const getPlayerBoltAssets = () => {
   if (!playerBoltAssets) {
@@ -311,6 +333,73 @@ const getEnemyBugAssets = () => {
   return enemyBugAssets;
 };
 
+const getDeathStarAssets = () => {
+  if (!deathStarAssets) {
+    deathStarAssets = {
+      bodyGeometry: markShared(new THREE.SphereGeometry(1.72, 42, 26)),
+      bodyMaterial: markShared(
+        new THREE.MeshStandardMaterial({
+          color: 0x17151f,
+          emissive: 0x2b0c16,
+          emissiveIntensity: 0.4,
+          metalness: 0.62,
+          roughness: 0.34
+        })
+      ),
+      cannonGeometry: markShared(new THREE.CylinderGeometry(0.055, 0.075, 0.92, 12)),
+      cannonMaterial: markShared(
+        new THREE.MeshStandardMaterial({
+          color: 0x2e3038,
+          emissive: 0xd74721,
+          emissiveIntensity: 0.28,
+          metalness: 0.74,
+          roughness: 0.25
+        })
+      ),
+      eyeGeometry: markShared(new THREE.SphereGeometry(0.145, 18, 12)),
+      eyeMaterial: markShared(
+        new THREE.MeshBasicMaterial({
+          color: 0xff2f2f,
+          transparent: true,
+          opacity: 0.96,
+          blending: THREE.AdditiveBlending
+        })
+      ),
+      eyeSocketGeometry: markShared(new THREE.TorusGeometry(0.22, 0.025, 8, 36)),
+      eyeSocketMaterial: markShared(
+        new THREE.MeshStandardMaterial({
+          color: 0x474a55,
+          emissive: 0x4f1018,
+          emissiveIntensity: 0.2,
+          metalness: 0.7,
+          roughness: 0.3
+        })
+      ),
+      glowMaterial: markShared(
+        new THREE.SpriteMaterial({
+          map: createRadialTexture("rgba(255,47,47,1)", "rgba(215,71,33,0)", 0.8),
+          transparent: true,
+          opacity: 0.58,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending
+        })
+      ),
+      ringGeometry: markShared(new THREE.TorusGeometry(1.78, 0.014, 8, 96)),
+      ringMaterial: markShared(
+        new THREE.MeshBasicMaterial({
+          color: 0xff5c2e,
+          transparent: true,
+          opacity: 0.22,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending
+        })
+      )
+    };
+  }
+
+  return deathStarAssets;
+};
+
 export const attachShipCannons = (ship: THREE.Group) => {
   const cannonMaterial = new THREE.MeshStandardMaterial({
     color: 0x11101a,
@@ -428,7 +517,7 @@ export const createHomingMissile = (
 
   return {
     id: projectileId++,
-    blastRadius: 5.4,
+    blastRadius: 2.15,
     damage: 12,
     homing: true,
     impactColor: 0xffcf65,
@@ -474,7 +563,12 @@ export const createPlasmaOrb = (position: THREE.Vector3, direction: THREE.Vector
   };
 };
 
-export const createEnemyShot = (position: THREE.Vector3, direction: THREE.Vector3, wave: number): ProjectileRuntime => {
+export const createEnemyShot = (
+  position: THREE.Vector3,
+  direction: THREE.Vector3,
+  wave: number,
+  options: EnemyShotOptions = {}
+): ProjectileRuntime => {
   const group = new THREE.Group();
   const normalizedDirection = direction.clone().normalize();
   const assets = getEnemyShotAssets();
@@ -488,12 +582,13 @@ export const createEnemyShot = (position: THREE.Vector3, direction: THREE.Vector
 
   return {
     id: projectileId++,
-    damage: 1,
+    canDamagePlanets: options.canDamagePlanets ?? true,
+    damage: options.damage ?? 1,
     life: 4.2,
     mesh: group,
     owner: "enemy",
-    radius: 0.4,
-    velocity: normalizedDirection.multiplyScalar(7.2 + Math.min(wave, 12) * 0.28)
+    radius: options.radius ?? 0.4,
+    velocity: normalizedDirection.multiplyScalar((7.2 + Math.min(wave, 12) * 0.28) * (options.speedMultiplier ?? 1))
   };
 };
 
@@ -547,12 +642,102 @@ export const createEnemyBug = (
     attackCooldown: config.attackCooldown,
     body,
     group,
+    hitRadius: 0.75,
     hp: config.enemyHp,
+    kind: "void-bug",
     maxHp: config.enemyHp,
     pattern: config.pattern,
+    preferredDistance: 8.5,
+    reward: 14,
+    separationRadius: 1.65,
     speed: config.enemySpeed,
     state: "raiding",
+    targetMode: "planet",
     targetPlanetId
+  };
+};
+
+export const createDeathStarBoss = (
+  position: THREE.Vector3,
+  targetPlanetId: string,
+  config: WaveConfig,
+  wave: number
+): EnemyRuntime => {
+  const group = new THREE.Group();
+  const assets = getDeathStarAssets();
+  group.position.copy(position);
+  group.name = "death-star-hunter";
+
+  const body = new THREE.Mesh(assets.bodyGeometry, assets.bodyMaterial);
+  group.add(body);
+
+  const ringA = new THREE.Mesh(assets.ringGeometry, assets.ringMaterial);
+  const ringB = new THREE.Mesh(assets.ringGeometry, assets.ringMaterial.clone());
+  ringA.rotation.x = Math.PI / 2;
+  ringB.rotation.y = Math.PI / 2.15;
+  group.add(ringA, ringB);
+
+  const eyeLayout = [
+    { position: new THREE.Vector3(0, 0.14, -1.72), scale: 1.7 },
+    { position: new THREE.Vector3(-0.72, 0.52, -1.45), scale: 1 },
+    { position: new THREE.Vector3(0.72, 0.48, -1.45), scale: 1 },
+    { position: new THREE.Vector3(-0.56, -0.52, -1.5), scale: 0.9 },
+    { position: new THREE.Vector3(0.58, -0.5, -1.5), scale: 0.9 }
+  ];
+
+  for (const eyeData of eyeLayout) {
+    const socket = new THREE.Mesh(assets.eyeSocketGeometry, assets.eyeSocketMaterial);
+    socket.position.copy(eyeData.position);
+    socket.scale.setScalar(eyeData.scale);
+    const eye = new THREE.Mesh(assets.eyeGeometry, assets.eyeMaterial);
+    eye.position.copy(eyeData.position).add(new THREE.Vector3(0, 0, -0.035));
+    eye.scale.setScalar(eyeData.scale);
+    group.add(socket, eye);
+  }
+
+  const glow = new THREE.Sprite(assets.glowMaterial);
+  glow.position.set(0, 0.08, -1.82);
+  glow.scale.set(3.7, 3.7, 1);
+  group.add(glow);
+
+  const weaponPorts = [
+    new THREE.Vector3(-0.95, 0.24, -1.64),
+    new THREE.Vector3(0.95, 0.24, -1.64),
+    new THREE.Vector3(-0.52, -0.74, -1.58),
+    new THREE.Vector3(0.52, -0.74, -1.58)
+  ];
+
+  for (const port of weaponPorts) {
+    const cannon = new THREE.Mesh(assets.cannonGeometry, assets.cannonMaterial);
+    cannon.position.copy(port).add(new THREE.Vector3(0, 0, 0.28));
+    cannon.rotation.x = Math.PI / 2;
+    group.add(cannon);
+  }
+
+  const light = new THREE.PointLight(0xff2f2f, 2.4, 15);
+  light.position.set(0, 0.08, -1.65);
+  group.add(light);
+
+  const hp = 24 + wave * 4;
+
+  return {
+    id: enemyId++,
+    attackCooldown: Math.max(1.25, config.attackCooldown * 0.55),
+    body,
+    group,
+    hitRadius: 2.25,
+    hp,
+    kind: "death-star",
+    maxHp: hp,
+    pattern: "burst",
+    preferredDistance: 13.5,
+    reward: 86 + wave * 9,
+    separationRadius: 5.2,
+    speed: 1.9 + Math.min(wave, 14) * 0.07,
+    state: "aggro",
+    targetMode: "ship",
+    targetPlanetId,
+    weaponPorts: weaponPorts.map((port) => port.clone())
   };
 };
 

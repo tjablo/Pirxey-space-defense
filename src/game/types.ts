@@ -47,9 +47,12 @@ export type SceneBridge = {
 };
 
 export type AttackPatternKind = "single" | "burst" | "wave";
+export type EnemyKind = "void-bug" | "death-star";
+export type EnemyTargetMode = "planet" | "ship";
 
 export type EnemyRuntime = {
   id: number;
+  kind: EnemyKind;
   group: THREE.Group;
   body: THREE.Object3D;
   targetPlanetId: string;
@@ -59,6 +62,12 @@ export type EnemyRuntime = {
   speed: number;
   attackCooldown: number;
   pattern: AttackPatternKind;
+  hitRadius: number;
+  preferredDistance: number;
+  reward: number;
+  separationRadius: number;
+  targetMode: EnemyTargetMode;
+  weaponPorts?: THREE.Vector3[];
 };
 
 export type ProjectileOwner = "player" | "enemy";
@@ -73,6 +82,7 @@ export type ProjectileRuntime = {
   radius: number;
   age?: number;
   blastRadius?: number;
+  canDamagePlanets?: boolean;
   detonateOnExpire?: boolean;
   homing?: boolean;
   impactColor?: number;
@@ -92,6 +102,7 @@ export type ExplosionRuntime = {
 export type WaveConfig = {
   attackCooldown: number;
   count: number;
+  deathStarCount: number;
   enemyHp: number;
   enemySpeed: number;
   groups: number;
