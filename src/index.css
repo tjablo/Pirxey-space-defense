@@ -652,6 +652,80 @@ canvas.is-pointer-locked {
   background: rgba(90, 166, 189, 0.16);
 }
 
+.weapon-loadout {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  border: 1px solid rgba(255, 207, 101, 0.18);
+  border-radius: 6px;
+  background: rgba(8, 14, 21, 0.46);
+  padding: 10px;
+}
+
+.weapon-loadout-head,
+.weapon-loadout-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.weapon-loadout-head span,
+.weapon-loadout-row > span {
+  color: rgba(249, 249, 234, 0.56);
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.weapon-loadout-head strong {
+  overflow: hidden;
+  color: #ffcf65;
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-size: 11px;
+  line-height: 1.2;
+  text-align: right;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.weapon-loadout-row > div {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.weapon-loadout-row em {
+  color: rgba(249, 249, 234, 0.46);
+  font-size: 12px;
+  font-style: normal;
+}
+
+.weapon-chip {
+  min-height: 28px;
+  border: 1px solid rgba(249, 249, 234, 0.1);
+  border-radius: 999px;
+  background: rgba(249, 249, 234, 0.06);
+  color: rgba(249, 249, 234, 0.78);
+  padding: 0 9px;
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.weapon-chip:hover,
+.weapon-chip.is-active {
+  border-color: rgba(255, 207, 101, 0.48);
+  background: rgba(255, 207, 101, 0.14);
+  color: #ffcf65;
+}
+
 .metric {
   min-width: 0;
   border-radius: 6px;
@@ -800,6 +874,116 @@ canvas.is-pointer-locked {
   height: 26px;
   border-radius: 999px;
   background: rgba(249, 249, 234, 0.2);
+}
+
+.weapon-shop-bubble {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  width: min(560px, calc(100vw - 32px));
+  border: 1px solid rgba(255, 207, 101, 0.34);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(255, 207, 101, 0.14), rgba(90, 166, 189, 0.1)),
+    rgba(6, 4, 17, 0.76);
+  box-shadow:
+    0 24px 80px rgba(0, 0, 0, 0.38),
+    0 0 34px rgba(255, 207, 101, 0.12);
+  padding: 12px;
+  backdrop-filter: blur(18px);
+}
+
+.weapon-shop-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  background: rgba(255, 207, 101, 0.14);
+  color: #ffcf65;
+  box-shadow: inset 0 0 18px rgba(255, 207, 101, 0.12);
+}
+
+.weapon-shop-copy {
+  min-width: 0;
+}
+
+.weapon-shop-copy span,
+.weapon-shop-copy small {
+  display: block;
+  overflow: hidden;
+  color: rgba(249, 249, 234, 0.54);
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.weapon-shop-copy strong {
+  display: block;
+  overflow: hidden;
+  margin-top: 3px;
+  color: #ffcf65;
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.weapon-shop-copy p {
+  display: -webkit-box;
+  max-width: 340px;
+  overflow: hidden;
+  margin: 5px 0 6px;
+  color: rgba(249, 249, 234, 0.74);
+  font-size: 12px;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.weapon-shop-bubble button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  border: 1px solid rgba(255, 207, 101, 0.44);
+  border-radius: 999px;
+  background: rgba(255, 207, 101, 0.16);
+  color: #ffcf65;
+  gap: 7px;
+  padding: 0 12px;
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.weapon-shop-bubble button:hover:not(:disabled):not(.is-locked) {
+  background: rgba(255, 207, 101, 0.24);
+}
+
+.weapon-shop-bubble button.is-locked {
+  border-color: rgba(249, 249, 234, 0.1);
+  background: rgba(249, 249, 234, 0.06);
+  color: rgba(249, 249, 234, 0.48);
+}
+
+.weapon-shop-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: rgba(249, 249, 234, 0.18);
+  color: #f9f9ea;
 }
 
 .modal-backdrop {

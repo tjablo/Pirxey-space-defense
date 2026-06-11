@@ -1,4 +1,5 @@
 import {
+  Coins,
   Compass,
   Crosshair,
   Gauge,
@@ -10,21 +11,41 @@ import {
   Radio,
   RotateCcw,
   Rocket,
+  ShoppingBag,
   Telescope,
   Target,
   Volume2,
   VolumeX,
-  X
+  X,
+  Zap
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { CSS2DObject, CSS2DRenderer } from "three/examples/jsm/renderers/CSS2DRenderer.js";
 import type { ServicePlanet } from "../data/services";
 import { createGameAudio } from "../game/audio";
-import { attachShipCannons, createEnemyBug, createEnemyShot, createExplosion, createPlayerBolt, disposeObject } from "../game/factories";
+import {
+  attachShipCannons,
+  createEnemyBug,
+  createEnemyShot,
+  createExplosion,
+  createHomingMissile,
+  createPlasmaOrb,
+  createPlayerBolt,
+  createPlayerLaser,
+  disposeObject
+} from "../game/factories";
 import { SOUNDTRACK_URLS } from "../game/soundtrack";
 import type { CombatHud, EnemyRuntime, ExplosionRuntime, ProjectileRuntime } from "../game/types";
 import { createSpawnPosition, getWaveConfig } from "../game/waves";
+import {
+  DEFAULT_OWNED_WEAPONS,
+  DEFAULT_PRIMARY_WEAPON,
+  getOwnedWeaponsBySlot,
+  getPlanetWeaponOffer,
+  WEAPON_CATALOG
+} from "../game/weapons";
+import type { WeaponId } from "../game/weapons";
 
 type FlightMode = "Manual" | "Autopilot" | "Docked";
 
@@ -459,6 +480,7 @@ const formatDistance = (value: number | null) => {
 };
 
 const PLAYER_MAX_HEALTH = 100;
+const WEAPON_SHOP_DISTANCE = 7.4;
 
 const createCombatHudState = (phase: CombatHud["phase"]): CombatHud => ({
   enemies: 0,
@@ -489,6 +511,15 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
   const [destroyedPlanetIds, setDestroyedPlanetIds] = useState<string[]>([]);
   const [matchId, setMatchId] = useState(0);
   const [initialMatchPhase, setInitialMatchPhase] = useState<CombatHud["phase"]>("Awaiting");
+  const [credits, setCredits] = useState(0);
+  const creditsRef = useRef(0);
+  const [ownedWeaponIds, setOwnedWeaponIds] = useState<WeaponId[]>(DEFAULT_OWNED_WEAPONS);
+  const ownedWeaponIdsRef = useRef<Set<WeaponId>>(new Set(DEFAULT_OWNED_WEAPONS));
+  const [primaryWeaponId, setPrimaryWeaponId] = useState<WeaponId>(DEFAULT_PRIMARY_WEAPON);
+  const primaryWeaponIdRef = useRef<WeaponId>(DEFAULT_PRIMARY_WEAPON);
+  const [secondaryWeaponId, setSecondaryWeaponId] = useState<WeaponId | null>(null);
+  const secondaryWeaponIdRef = useRef<WeaponId | null>(null);
+  const buyOrEquipWeaponRef = useRef<(weaponId: WeaponId) => void>(() => undefined);
   const [shipHealth, setShipHealth] = useState(PLAYER_MAX_HEALTH);
   const [planetHud, setPlanetHud] = useState<PlanetHudItem[]>(() =>
     services.map((service) => ({
@@ -524,6 +555,14 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     setCameraMode("Drag aim");
     setShowDestinations(false);
     setShipHealth(PLAYER_MAX_HEALTH);
+    creditsRef.current = 0;
+    setCredits(0);
+    ownedWeaponIdsRef.current = new Set(DEFAULT_OWNED_WEAPONS);
+    setOwnedWeaponIds(DEFAULT_OWNED_WEAPONS);
+    primaryWeaponIdRef.current = DEFAULT_PRIMARY_WEAPON;
+    setPrimaryWeaponId(DEFAULT_PRIMARY_WEAPON);
+    secondaryWeaponIdRef.current = null;
+    setSecondaryWeaponId(null);
     setCombatHud(createCombatHudState(initialMatchPhase));
     gamePhaseRef.current = initialMatchPhase;
     setGamePhase(initialMatchPhase);
@@ -533,6 +572,9 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     () => services.find((service) => service.id === selectedId) ?? services[0],
     [selectedId, services]
   );
+  const ownedPrimaryWeapons = useMemo(() => getOwnedWeaponsBySlot(ownedWeaponIds, "primary"), [ownedWeaponIds]);
+  const ownedSecondaryWeapons = useMemo(() => getOwnedWeaponsBySlot(ownedWeaponIds, "secondary"), [ownedWeaponIds]);
+  const activeSecondaryWeapon = secondaryWeaponId ? WEAPON_CATALOG[secondaryWeaponId] : null;
   const showCombatHud =
     gamePhase === "Running" || gamePhase === "Game over" || (gamePhase === "Paused" && combatHud.enemies > 0);
   const showPlanetRoster =
@@ -540,13 +582,42 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     gamePhase === "Running" ||
     gamePhase === "Game over" ||
     (gamePhase === "Paused" && combatHud.enemies > 0);
-  const isBattleActive = gamePhase === "Running" || (gamePhase === "Paused" && combatHud.enemies > 0);
   const isBattleStarted = gamePhase === "Countdown" || gamePhase === "Running" || gamePhase === "Paused";
   const canUseNavigation = gamePhase === "Awaiting" || gamePhase === "Exploring";
+  const nearbyWeaponOffer = useMemo(() => {
+    if (!isBattleStarted || gamePhase === "Paused" || !nearby || nearby.distance > WEAPON_SHOP_DISTANCE) {
+      return null;
+    }
+    const weapon = getPlanetWeaponOffer(nearby.id);
+    if (!weapon) {
+      return null;
+    }
+    return {
+      planetId: nearby.id,
+      planetName: nearby.name,
+      weapon
+    };
+  }, [gamePhase, isBattleStarted, nearby]);
 
   useEffect(() => {
     selectedIdRef.current = selectedId;
   }, [selectedId]);
+
+  useEffect(() => {
+    creditsRef.current = credits;
+  }, [credits]);
+
+  useEffect(() => {
+    ownedWeaponIdsRef.current = new Set(ownedWeaponIds);
+  }, [ownedWeaponIds]);
+
+  useEffect(() => {
+    primaryWeaponIdRef.current = primaryWeaponId;
+  }, [primaryWeaponId]);
+
+  useEffect(() => {
+    secondaryWeaponIdRef.current = secondaryWeaponId;
+  }, [secondaryWeaponId]);
 
   useEffect(() => {
     audioRef.current.setMuted(audioMuted);
@@ -566,7 +637,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
 
   const selectTarget = useCallback(
     (id: string) => {
-      if (destroyedPlanetIds.includes(id) || isBattleActive) {
+      if (destroyedPlanetIds.includes(id) || !canUseNavigation) {
         return;
       }
       setSelectedId(id);
@@ -574,13 +645,52 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       setShowDestinations(false);
       bridgeRef.current?.flyTo(id);
     },
-    [destroyedPlanetIds, isBattleActive]
+    [canUseNavigation, destroyedPlanetIds]
   );
 
   const closeDock = useCallback(() => {
     setDockedService(null);
     bridgeRef.current?.releaseDock();
   }, []);
+
+  const equipWeapon = useCallback((weaponId: WeaponId) => {
+    const weapon = WEAPON_CATALOG[weaponId];
+    if (!weapon || !ownedWeaponIdsRef.current.has(weaponId)) {
+      return;
+    }
+    if (weapon.slot === "primary") {
+      primaryWeaponIdRef.current = weaponId;
+      setPrimaryWeaponId(weaponId);
+      return;
+    }
+    secondaryWeaponIdRef.current = weaponId;
+    setSecondaryWeaponId(weaponId);
+  }, []);
+
+  const buyOrEquipWeapon = useCallback(
+    (weaponId: WeaponId) => {
+      const weapon = WEAPON_CATALOG[weaponId];
+      if (!weapon) {
+        return;
+      }
+      const owned = ownedWeaponIdsRef.current.has(weaponId);
+      if (!owned) {
+        if (creditsRef.current < weapon.price) {
+          return;
+        }
+        creditsRef.current -= weapon.price;
+        setCredits(creditsRef.current);
+        ownedWeaponIdsRef.current = new Set([...ownedWeaponIdsRef.current, weaponId]);
+        setOwnedWeaponIds((previous) => (previous.includes(weaponId) ? previous : [...previous, weaponId]));
+      }
+      equipWeapon(weaponId);
+    },
+    [equipWeapon]
+  );
+
+  useEffect(() => {
+    buyOrEquipWeaponRef.current = buyOrEquipWeapon;
+  }, [buyOrEquipWeapon]);
 
   const startBattleAudio = useCallback(() => {
     audioRef.current.resume();
@@ -609,7 +719,13 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
   const startDefenseFromExplore = useCallback(() => {
     startBattleAudio();
     gamePhaseRef.current = "Countdown";
-    setInitialMatchPhase("Countdown");
+    setShowDestinations(false);
+    setCombatHud((previous) => ({
+      ...previous,
+      phase: "Countdown",
+      roundCountdown: 4,
+      threat: "Next round"
+    }));
     setGamePhase("Countdown");
   }, [startBattleAudio]);
 
@@ -659,6 +775,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     let lastPixelSample = 0;
     let lastNearbyKey = "";
     let fireCooldown = 0;
+    let secondaryFireCooldown = 0;
     let waveCooldown = 4;
     let currentWave = 0;
     let currentWaveTargetId = "";
@@ -690,6 +807,10 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     const projectileDirection = new THREE.Vector3();
     const projectilePosition = new THREE.Vector3();
     const muzzleOffset = new THREE.Vector3();
+    const missileForward = new THREE.Vector3();
+    const missileTargetOffset = new THREE.Vector3();
+    const blastOrigin = new THREE.Vector3();
+    const targetEnemyPosition = new THREE.Vector3();
     const explosionPosition = new THREE.Vector3();
     const enemySeparation = new THREE.Vector3();
     const enemyLateral = new THREE.Vector3();
@@ -1167,6 +1288,18 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       }
     };
 
+    const grantKillReward = () => {
+      const reward = 14 + currentWave * 3;
+      score += 10 + currentWave;
+      creditsRef.current += reward;
+      setCredits(creditsRef.current);
+    };
+
+    const destroyEnemy = (enemy: EnemyRuntime) => {
+      grantKillReward();
+      removeEnemy(enemy);
+    };
+
     const aggroPlanetGroup = (planetId: string, origin: THREE.Vector3, sourceEnemyId: number) => {
       const candidates = enemies
         .filter((enemy) => enemy.targetPlanetId === planetId && enemy.id !== sourceEnemyId && enemy.state === "raiding")
@@ -1195,7 +1328,68 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       }
     };
 
-    const firePlayerShot = () => {
+    const damageEnemy = (enemy: EnemyRuntime, damage: number, origin: THREE.Vector3) => {
+      enemy.hp -= damage;
+      enemy.state = "aggro";
+      aggroPlanetGroup(enemy.targetPlanetId, origin, enemy.id);
+      if (enemy.hp <= 0) {
+        destroyEnemy(enemy);
+      }
+    };
+
+    const detonatePlayerProjectile = (projectile: ProjectileRuntime) => {
+      blastOrigin.copy(projectile.mesh.position);
+      const radius = projectile.blastRadius ?? 0;
+      const isPlasma = projectile.weaponId === "plasma-orb";
+      addExplosion(
+        blastOrigin,
+        projectile.impactColor ?? 0x7dffea,
+        isPlasma ? 64 : 34,
+        isPlasma ? 3.25 : radius ? radius * 0.34 : 0.9
+      );
+      for (let enemyIndex = enemies.length - 1; enemyIndex >= 0; enemyIndex -= 1) {
+        const enemy = enemies[enemyIndex];
+        const distance = enemy.group.position.distanceTo(blastOrigin);
+        if (distance <= radius + 0.75) {
+          const coreRadius = radius * (isPlasma ? 0.68 : 0.48);
+          const falloff =
+            distance <= coreRadius ? 1 : clamp(1 - (distance - coreRadius) / Math.max(radius - coreRadius, 0.1), 0.58, 1);
+          damageEnemy(enemy, projectile.damage * falloff, blastOrigin);
+        }
+      }
+      removeProjectile(projectile);
+    };
+
+    const findEnemyInDirection = (
+      origin: THREE.Vector3,
+      direction: THREE.Vector3,
+      maxDistance = 150,
+      minAlignment = 0.16
+    ) => {
+      let target: EnemyRuntime | null = null;
+      let nearestDistance = maxDistance;
+      missileForward.copy(direction).normalize();
+
+      for (const enemy of enemies) {
+        missileTargetOffset.copy(enemy.group.position).sub(origin);
+        const distance = missileTargetOffset.length();
+        if (distance <= 0.001 || distance > maxDistance) {
+          continue;
+        }
+        const alignment = missileTargetOffset.divideScalar(distance).dot(missileForward);
+        if (alignment < minAlignment) {
+          continue;
+        }
+        if (distance < nearestDistance) {
+          nearestDistance = distance;
+          target = enemy;
+        }
+      }
+
+      return target;
+    };
+
+    const firePrimaryWeapon = () => {
       if (
         fireCooldown > 0 ||
         dockedTarget.active ||
@@ -1205,13 +1399,79 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       ) {
         return;
       }
+      const weaponId = primaryWeaponIdRef.current;
+      const weapon = WEAPON_CATALOG[weaponId] ?? WEAPON_CATALOG[DEFAULT_PRIMARY_WEAPON];
       forward.set(0, 0, -1).applyQuaternion(ship.quaternion).normalize();
-      muzzleOffset.set(0, -0.02, -2.25).applyQuaternion(ship.quaternion);
+      const addProjectile = (projectile: ProjectileRuntime) => {
+        projectiles.push(projectile);
+        scene.add(projectile.mesh);
+      };
+
+      if (weaponId === "twin-cannons") {
+        for (const x of [-0.68, 0.68]) {
+          muzzleOffset.set(x, -0.05, -2.08).applyQuaternion(ship.quaternion);
+          projectilePosition.copy(ship.position).add(muzzleOffset);
+          addProjectile(createPlayerBolt(projectilePosition, forward));
+        }
+      } else if (weaponId === "pulse-laser" || weaponId === "rail-splitter" || weaponId === "rapid-repeater") {
+        muzzleOffset.set(0, -0.02, -2.34).applyQuaternion(ship.quaternion);
+        projectilePosition.copy(ship.position).add(muzzleOffset);
+        addProjectile(createPlayerLaser(projectilePosition, forward, weaponId));
+      } else {
+        muzzleOffset.set(0, -0.02, -2.25).applyQuaternion(ship.quaternion);
+        projectilePosition.copy(ship.position).add(muzzleOffset);
+        addProjectile(createPlayerBolt(projectilePosition, forward));
+      }
+
+      fireCooldown = weapon.cooldown;
+      audioRef.current.shoot();
+    };
+
+    const firePlayerShot = () => firePrimaryWeapon();
+
+    const fireSecondaryWeapon = () => {
+      if (
+        secondaryFireCooldown > 0 ||
+        dockedTarget.active ||
+        gamePhaseRef.current === "Paused" ||
+        gamePhaseRef.current === "Awaiting" ||
+        gamePhaseRef.current === "Game over"
+      ) {
+        return;
+      }
+      const weaponId = secondaryWeaponIdRef.current;
+      if (!weaponId) {
+        return;
+      }
+      const weapon = WEAPON_CATALOG[weaponId];
+      if (!weapon || weapon.slot !== "secondary") {
+        return;
+      }
+
+      forward.set(0, 0, -1).applyQuaternion(ship.quaternion).normalize();
+      muzzleOffset.set(0, -0.02, -2.36).applyQuaternion(ship.quaternion);
       projectilePosition.copy(ship.position).add(muzzleOffset);
-      const projectile = createPlayerBolt(projectilePosition, forward);
-      projectiles.push(projectile);
-      scene.add(projectile.mesh);
-      fireCooldown = 0.18;
+
+      if (weaponId === "homing-missiles") {
+        const target = findEnemyInDirection(projectilePosition, forward, 170, 0.12);
+        const missile = createHomingMissile(projectilePosition, forward, target?.id ?? null);
+        projectiles.push(missile);
+        scene.add(missile.mesh);
+      } else if (weaponId === "plasma-orb") {
+        const orb = createPlasmaOrb(projectilePosition, forward);
+        projectiles.push(orb);
+        scene.add(orb.mesh);
+      } else if (weaponId === "arc-pulse") {
+        addExplosion(ship.position, 0x7dffea, 72, 3.4);
+        for (let enemyIndex = enemies.length - 1; enemyIndex >= 0; enemyIndex -= 1) {
+          const enemy = enemies[enemyIndex];
+          if (enemy.group.position.distanceTo(ship.position) <= 12.5) {
+            destroyEnemy(enemy);
+          }
+        }
+      }
+
+      secondaryFireCooldown = weapon.cooldown;
       audioRef.current.shoot();
     };
 
@@ -1336,6 +1596,39 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       }
     };
 
+    const findNearbyArmoryWeapon = () => {
+      const phase = gamePhaseRef.current;
+      if (phase !== "Countdown" && phase !== "Running") {
+        return null;
+      }
+      ship.getWorldPosition(shipWorld);
+      const candidate = planetRuntimes
+        .filter((planet) => !planet.destroyed)
+        .map((planet) => {
+          planet.group.getWorldPosition(planet.worldPosition);
+          return {
+            planet,
+            distance: shipWorld.distanceTo(planet.worldPosition) - planet.service.size
+          };
+        })
+        .sort((a, b) => a.distance - b.distance)[0];
+
+      if (!candidate || candidate.distance > WEAPON_SHOP_DISTANCE) {
+        return null;
+      }
+
+      return getPlanetWeaponOffer(candidate.planet.service.id) ?? null;
+    };
+
+    const useNearbyArmory = () => {
+      const weapon = findNearbyArmoryWeapon();
+      if (!weapon) {
+        return false;
+      }
+      buyOrEquipWeaponRef.current(weapon.id);
+      return true;
+    };
+
     bridgeRef.current = {
       flyTo: (id: string) => {
         if (isNavigationLocked()) {
@@ -1364,10 +1657,17 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       }
       keys.add(event.code);
       if (event.code === "KeyE") {
-        dockCurrent();
+        if (useNearbyArmory()) {
+          event.preventDefault();
+        } else {
+          dockCurrent();
+        }
       }
       if (event.code === "KeyF" && !event.repeat) {
         firePlayerShot();
+      }
+      if (event.code === "KeyG" && !event.repeat) {
+        fireSecondaryWeapon();
       }
       if (event.code === "KeyV") {
         event.preventDefault();
@@ -1390,6 +1690,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
 
     let dragging = false;
     let pointerFireHeld = false;
+    let secondaryFireHeld = false;
     let lastX = 0;
     let lastY = 0;
     let pointerLocked = false;
@@ -1420,6 +1721,12 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     };
 
     const onPointerDown = (event: PointerEvent) => {
+      if (event.button === 2) {
+        event.preventDefault();
+        secondaryFireHeld = true;
+        fireSecondaryWeapon();
+        return;
+      }
       if (event.button !== 0) {
         return;
       }
@@ -1459,16 +1766,27 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     };
 
     const onPointerUp = (event: PointerEvent) => {
-      pointerFireHeld = false;
+      const releaseAll = event.type === "pointerleave" || event.type === "pointercancel";
+      if (releaseAll || event.button === 0) {
+        pointerFireHeld = false;
+      }
+      if (releaseAll || event.button === 2) {
+        secondaryFireHeld = false;
+      }
       dragging = false;
       if (renderer.domElement.hasPointerCapture(event.pointerId)) {
         renderer.domElement.releasePointerCapture(event.pointerId);
       }
     };
 
+    const onContextMenu = (event: MouseEvent) => {
+      event.preventDefault();
+    };
+
     const onWindowBlur = () => {
       keys.clear();
       pointerFireHeld = false;
+      secondaryFireHeld = false;
       dragging = false;
     };
 
@@ -1481,6 +1799,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     renderer.domElement.addEventListener("pointerup", onPointerUp);
     renderer.domElement.addEventListener("pointerleave", onPointerUp);
     renderer.domElement.addEventListener("pointercancel", onPointerUp);
+    renderer.domElement.addEventListener("contextmenu", onContextMenu);
     document.addEventListener("pointerlockchange", syncPointerLockMode);
 
     const resizeObserver = new ResizeObserver(() => {
@@ -1520,8 +1839,12 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       starFieldB.rotation.y -= delta * 0.003;
       dust.rotation.y += delta * 0.004;
       fireCooldown = Math.max(0, fireCooldown - delta);
+      secondaryFireCooldown = Math.max(0, secondaryFireCooldown - delta);
       if (keys.has("KeyF") || pointerFireHeld) {
         firePlayerShot();
+      }
+      if (keys.has("KeyG") || secondaryFireHeld) {
+        fireSecondaryWeapon();
       }
       shipHitFlash = Math.max(0, shipHitFlash - delta);
       const shipFlashRatio = clamp(shipHitFlash / 0.34, 0, 1);
@@ -1567,8 +1890,15 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
             child.material.opacity = fade * 0.9;
             const pulse = 1 + delta * (2.2 - fade);
             child.scale.multiplyScalar(pulse);
+          } else if (child instanceof THREE.Mesh) {
+            const material = child.material;
+            if (material instanceof THREE.MeshBasicMaterial) {
+              material.opacity = fade * (child.geometry instanceof THREE.RingGeometry ? 0.72 : 0.48);
+            }
+            const growth = child.geometry instanceof THREE.RingGeometry ? 1 + delta * (6.4 - fade * 1.8) : 1 + delta * 2.4;
+            child.scale.multiplyScalar(growth);
           } else if (child instanceof THREE.PointLight) {
-            child.intensity = 2.2 * fade;
+            child.intensity = 3.4 * fade;
           }
         }
         if (explosion.life <= 0) {
@@ -1769,6 +2099,35 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       if (phase !== "Game over") {
         for (let i = projectiles.length - 1; i >= 0; i -= 1) {
           const projectile = projectiles[i];
+          projectile.age = (projectile.age ?? 0) + delta;
+          if (projectile.owner === "player" && projectile.homing) {
+            let target = projectile.targetEnemyId
+              ? enemies.find((enemy) => enemy.id === projectile.targetEnemyId)
+              : null;
+            if (target && target.group.position.distanceTo(projectile.mesh.position) > 180) {
+              target = null;
+              projectile.targetEnemyId = undefined;
+            }
+            if (!target) {
+              target = findEnemyInDirection(projectile.mesh.position, projectile.velocity, 160, 0.02);
+              projectile.targetEnemyId = target?.id;
+            }
+            if (target) {
+              target.group.getWorldPosition(targetEnemyPosition);
+              const speed = projectile.velocity.length();
+              projectileDirection.copy(targetEnemyPosition).sub(projectile.mesh.position).normalize().multiplyScalar(speed);
+              projectile.velocity.lerp(projectileDirection, clamp((projectile.turnRate ?? 2.8) * delta, 0, 1));
+              projectile.velocity.setLength(speed);
+              projectile.mesh.lookAt(projectile.mesh.position.clone().add(projectile.velocity));
+            }
+          }
+          if (projectile.weaponId === "plasma-orb") {
+            const pulse = 1.08 + Math.sin(elapsed * 18) * 0.12;
+            projectile.mesh.scale.setScalar(pulse);
+            projectile.mesh.rotation.x += delta * 1.6;
+            projectile.mesh.rotation.y += delta * 2.2;
+            projectile.mesh.rotation.z -= delta * 1.1;
+          }
           projectile.mesh.position.addScaledVector(projectile.velocity, delta);
           projectile.life -= delta;
 
@@ -1777,13 +2136,11 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
               const enemy = enemies[enemyIndex];
               const hitDistance = projectile.mesh.position.distanceTo(enemy.group.position);
               if (hitDistance < projectile.radius + 0.75) {
-                enemy.hp -= projectile.damage;
-                enemy.state = "aggro";
-                aggroPlanetGroup(enemy.targetPlanetId, enemy.group.position, enemy.id);
-                removeProjectile(projectile);
-                if (enemy.hp <= 0) {
-                  score += 10 + currentWave;
-                  removeEnemy(enemy);
+                if (projectile.blastRadius) {
+                  detonatePlayerProjectile(projectile);
+                } else {
+                  damageEnemy(enemy, projectile.damage, enemy.group.position);
+                  removeProjectile(projectile);
                 }
                 break;
               }
@@ -1812,7 +2169,11 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
           }
 
           if (projectiles.includes(projectile) && projectile.life <= 0) {
-            removeProjectile(projectile);
+            if (projectile.owner === "player" && projectile.detonateOnExpire) {
+              detonatePlayerProjectile(projectile);
+            } else {
+              removeProjectile(projectile);
+            }
           }
         }
       }
@@ -1926,6 +2287,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
           wave: currentWave
         });
         renderer.domElement.dataset.gameStats = JSON.stringify({
+          credits: creditsRef.current,
           enemies: enemies.length,
           flamePower: Number(flamePower.toFixed(3)),
           phase: gamePhaseRef.current,
@@ -1938,8 +2300,10 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
           projectiles: projectiles.length,
           roundCountdown,
           score,
+          secondaryWeapon: secondaryWeaponIdRef.current,
           shipHealth: Math.round(runtimeShipHealth),
           threat,
+          primaryWeapon: primaryWeaponIdRef.current,
           wave: currentWave
         });
       }
@@ -1971,6 +2335,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       renderer.domElement.removeEventListener("pointerup", onPointerUp);
       renderer.domElement.removeEventListener("pointerleave", onPointerUp);
       renderer.domElement.removeEventListener("pointercancel", onPointerUp);
+      renderer.domElement.removeEventListener("contextmenu", onContextMenu);
       bridgeRef.current = null;
       if (window.__pirxeySpaceDebug === debugApi) {
         delete window.__pirxeySpaceDebug;
@@ -1991,6 +2356,29 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       });
     };
   }, [initialMatchPhase, matchId, services]);
+
+  const offeredWeapon = nearbyWeaponOffer?.weapon ?? null;
+  const offeredWeaponOwned = offeredWeapon ? ownedWeaponIds.includes(offeredWeapon.id) : false;
+  const offeredWeaponEquipped =
+    offeredWeapon?.slot === "primary"
+      ? offeredWeapon.id === primaryWeaponId
+      : offeredWeapon
+        ? offeredWeapon.id === secondaryWeaponId
+        : false;
+  const offeredWeaponAffordable = offeredWeapon ? credits >= offeredWeapon.price : false;
+  const offeredWeaponMissing = offeredWeapon ? Math.max(0, offeredWeapon.price - credits) : 0;
+  const offeredWeaponAction = offeredWeaponEquipped
+    ? "Equipped"
+    : offeredWeaponOwned
+      ? `Equip ${offeredWeapon?.slot}`
+      : `Buy ${offeredWeapon?.price} cr`;
+  const offeredWeaponStatus = offeredWeaponOwned
+    ? offeredWeaponEquipped
+      ? "Installed"
+      : "Owned"
+    : offeredWeaponAffordable
+      ? "Ready to buy"
+      : `Missing ${offeredWeaponMissing} cr`;
 
   return (
     <main className={`relative h-screen w-screen overflow-hidden bg-void text-parchment ${dockedService ? "is-docked" : ""}`}>
@@ -2087,6 +2475,10 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
           <div className="combat-card">
             <span>Score</span>
             <strong>{combatHud.score}</strong>
+          </div>
+          <div className="combat-card">
+            <span>Credits</span>
+            <strong>{credits}</strong>
           </div>
           <div className="combat-card">
             <span>State</span>
@@ -2190,6 +2582,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
               <ControlHint icon={<MousePointer2 />} label="V" value="toggle camera" />
               <ControlHint icon={<Target />} label="E" value={canUseNavigation ? "dock nearby" : "disabled in battle"} />
               <ControlHint icon={<Crosshair />} label="Hold Click / F" value="fire cannons" />
+              <ControlHint icon={<Zap />} label="Right Click / G" value={activeSecondaryWeapon ? activeSecondaryWeapon.name : "buy secondary"} />
               <ControlHint icon={<Navigation />} label="Space / C" value="vertical" />
             </div>
             <div className="camera-mode-note">
@@ -2210,10 +2603,74 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
                 tone={canUseNavigation && nearby?.canDock ? "hot" : "cool"}
               />
             </div>
+            <div className="weapon-loadout">
+              <div className="weapon-loadout-head">
+                <span>Loadout</span>
+                <strong>{credits} Credits</strong>
+              </div>
+              <div className="weapon-loadout-row">
+                <span>Primary</span>
+                <div>
+                  {ownedPrimaryWeapons.map((weapon) => (
+                    <button
+                      key={weapon.id}
+                      className={`weapon-chip ${weapon.id === primaryWeaponId ? "is-active" : ""}`}
+                      type="button"
+                      onClick={() => equipWeapon(weapon.id)}
+                    >
+                      {weapon.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="weapon-loadout-row">
+                <span>Secondary</span>
+                <div>
+                  {ownedSecondaryWeapons.length > 0 ? (
+                    ownedSecondaryWeapons.map((weapon) => (
+                      <button
+                        key={weapon.id}
+                        className={`weapon-chip ${weapon.id === secondaryWeaponId ? "is-active" : ""}`}
+                        type="button"
+                        onClick={() => equipWeapon(weapon.id)}
+                      >
+                        {weapon.name}
+                      </button>
+                    ))
+                  ) : (
+                    <em>Buy at planets</em>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
 
           <div className="pointer-events-none order-1 flex min-h-[170px] items-end justify-center lg:order-2">
-            {canUseNavigation && nearby?.canDock && !dockedService ? (
+            {nearbyWeaponOffer && offeredWeapon ? (
+              <div className="pointer-events-auto weapon-shop-bubble">
+                <div className="weapon-shop-icon">
+                  <ShoppingBag className="h-4 w-4" />
+                </div>
+                <div className="weapon-shop-copy">
+                  <span>{nearbyWeaponOffer.planetName} armory</span>
+                  <strong>{offeredWeapon.name}</strong>
+                  <p>{offeredWeapon.description}</p>
+                  <small>
+                    {offeredWeapon.slot} weapon · Cost {offeredWeapon.price} cr · Balance {credits} cr · {offeredWeaponStatus}
+                  </small>
+                </div>
+                <button
+                  className={!offeredWeaponOwned && !offeredWeaponAffordable ? "is-locked" : ""}
+                  type="button"
+                  aria-disabled={!offeredWeaponOwned && !offeredWeaponAffordable}
+                  onClick={() => buyOrEquipWeapon(offeredWeapon.id)}
+                >
+                  <Coins className="h-4 w-4" />
+                  {offeredWeaponAction}
+                  <span className="weapon-shop-key">E</span>
+                </button>
+              </div>
+            ) : canUseNavigation && nearby?.canDock && !dockedService ? (
               <button
                 className="pointer-events-auto dock-button"
                 type="button"

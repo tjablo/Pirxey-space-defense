@@ -1,5 +1,6 @@
 import type * as THREE from "three";
 import type { ServicePlanet } from "../data/services";
+import type { WeaponId } from "./weapons";
 
 export type FlightMode = "Manual" | "Autopilot" | "Docked";
 
@@ -70,6 +71,14 @@ export type ProjectileRuntime = {
   life: number;
   damage: number;
   radius: number;
+  age?: number;
+  blastRadius?: number;
+  detonateOnExpire?: boolean;
+  homing?: boolean;
+  impactColor?: number;
+  targetEnemyId?: number;
+  turnRate?: number;
+  weaponId?: WeaponId;
 };
 
 export type ExplosionRuntime = {

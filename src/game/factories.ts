@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { EnemyRuntime, ExplosionRuntime, ProjectileRuntime, WaveConfig } from "./types";
+import type { WeaponId } from "./weapons";
 import { createRadialTexture } from "./textures";
 
 let projectileId = 1;
@@ -34,6 +35,31 @@ type EnemyShotAssets = {
   tailMaterial: THREE.MeshBasicMaterial;
 };
 
+type LaserAssets = {
+  beamGeometry: THREE.CapsuleGeometry;
+  beamMaterial: THREE.MeshBasicMaterial;
+  coreGeometry: THREE.CapsuleGeometry;
+  coreMaterial: THREE.MeshBasicMaterial;
+};
+
+type MissileAssets = {
+  bodyGeometry: THREE.CylinderGeometry;
+  bodyMaterial: THREE.MeshStandardMaterial;
+  noseGeometry: THREE.ConeGeometry;
+  noseMaterial: THREE.MeshBasicMaterial;
+  flareMaterial: THREE.SpriteMaterial;
+};
+
+type PlasmaAssets = {
+  coreGeometry: THREE.SphereGeometry;
+  coreMaterial: THREE.MeshBasicMaterial;
+  shellGeometry: THREE.SphereGeometry;
+  shellMaterial: THREE.MeshBasicMaterial;
+  haloMaterial: THREE.SpriteMaterial;
+  ringGeometry: THREE.TorusGeometry;
+  ringMaterial: THREE.MeshBasicMaterial;
+};
+
 type EnemyBugAssets = {
   bodyGeometry: THREE.SphereGeometry;
   bodyMaterial: THREE.MeshStandardMaterial;
@@ -47,6 +73,9 @@ type EnemyBugAssets = {
 
 let playerBoltAssets: PlayerBoltAssets | null = null;
 let enemyShotAssets: EnemyShotAssets | null = null;
+let laserAssets: LaserAssets | null = null;
+let missileAssets: MissileAssets | null = null;
+let plasmaAssets: PlasmaAssets | null = null;
 let enemyBugAssets: EnemyBugAssets | null = null;
 
 const getPlayerBoltAssets = () => {
@@ -85,6 +114,116 @@ const getPlayerBoltAssets = () => {
   }
 
   return playerBoltAssets;
+};
+
+const getLaserAssets = () => {
+  if (!laserAssets) {
+    laserAssets = {
+      beamGeometry: markShared(new THREE.CapsuleGeometry(0.045, 1.72, 6, 14)),
+      beamMaterial: markShared(
+        new THREE.MeshBasicMaterial({
+          color: 0x40ff74,
+          transparent: true,
+          opacity: 0.54,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending
+        })
+      ),
+      coreGeometry: markShared(new THREE.CapsuleGeometry(0.024, 1.62, 6, 14)),
+      coreMaterial: markShared(
+        new THREE.MeshBasicMaterial({
+          color: 0xcaffb8,
+          transparent: true,
+          opacity: 1,
+          blending: THREE.AdditiveBlending
+        })
+      )
+    };
+  }
+
+  return laserAssets;
+};
+
+const getMissileAssets = () => {
+  if (!missileAssets) {
+    const flareTexture = createRadialTexture("rgba(255,207,101,1)", "rgba(215,71,33,0)", 0.75);
+    missileAssets = {
+      bodyGeometry: markShared(new THREE.CylinderGeometry(0.09, 0.12, 0.82, 14)),
+      bodyMaterial: markShared(
+        new THREE.MeshStandardMaterial({
+          color: 0xdedede,
+          emissive: 0x5aa6bd,
+          emissiveIntensity: 0.18,
+          metalness: 0.72,
+          roughness: 0.28
+        })
+      ),
+      noseGeometry: markShared(new THREE.ConeGeometry(0.12, 0.28, 14)),
+      noseMaterial: markShared(
+        new THREE.MeshBasicMaterial({
+          color: 0xffcf65
+        })
+      ),
+      flareMaterial: markShared(
+        new THREE.SpriteMaterial({
+          map: flareTexture,
+          transparent: true,
+          opacity: 0.78,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending
+        })
+      )
+    };
+  }
+
+  return missileAssets;
+};
+
+const getPlasmaAssets = () => {
+  if (!plasmaAssets) {
+    plasmaAssets = {
+      coreGeometry: markShared(new THREE.SphereGeometry(0.48, 32, 20)),
+      coreMaterial: markShared(
+        new THREE.MeshBasicMaterial({
+          color: 0xe8fff9,
+          transparent: true,
+          opacity: 0.96,
+          blending: THREE.AdditiveBlending
+        })
+      ),
+      shellGeometry: markShared(new THREE.SphereGeometry(0.72, 32, 20)),
+      shellMaterial: markShared(
+        new THREE.MeshBasicMaterial({
+          color: 0x35f7dc,
+          transparent: true,
+          opacity: 0.28,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending
+        })
+      ),
+      haloMaterial: markShared(
+        new THREE.SpriteMaterial({
+          map: createRadialTexture("rgba(125,255,234,1)", "rgba(90,166,189,0)", 0.85),
+          transparent: true,
+          opacity: 0.82,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending
+        })
+      ),
+      ringGeometry: markShared(new THREE.TorusGeometry(0.82, 0.028, 10, 72)),
+      ringMaterial: markShared(
+        new THREE.MeshBasicMaterial({
+          color: 0x7dffea,
+          transparent: true,
+          opacity: 0.58,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending
+        })
+      )
+    };
+  }
+
+  return plasmaAssets;
 };
 
 const getEnemyShotAssets = () => {
@@ -221,7 +360,117 @@ export const createPlayerBolt = (position: THREE.Vector3, direction: THREE.Vecto
     mesh: group,
     owner: "player",
     radius: 0.35,
-    velocity: normalizedDirection.multiplyScalar(48)
+    velocity: normalizedDirection.multiplyScalar(48),
+    weaponId: "scout-bolts"
+  };
+};
+
+export const createPlayerLaser = (
+  position: THREE.Vector3,
+  direction: THREE.Vector3,
+  weaponId: WeaponId = "pulse-laser"
+): ProjectileRuntime => {
+  const group = new THREE.Group();
+  const normalizedDirection = direction.clone().normalize();
+  const assets = getLaserAssets();
+  const core = new THREE.Mesh(assets.coreGeometry, assets.coreMaterial);
+  const beam = new THREE.Mesh(assets.beamGeometry, assets.beamMaterial);
+  group.add(beam, core);
+  group.position.copy(position);
+  group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), normalizedDirection);
+
+  return {
+    id: projectileId++,
+    damage: weaponId === "rail-splitter" ? 2.6 : weaponId === "rapid-repeater" ? 0.72 : 0.86,
+    life: weaponId === "rail-splitter" ? 1.1 : 0.82,
+    mesh: group,
+    owner: "player",
+    radius: weaponId === "rail-splitter" ? 0.42 : 0.26,
+    velocity: normalizedDirection.multiplyScalar(weaponId === "rail-splitter" ? 68 : 74),
+    weaponId
+  };
+};
+
+export const createHomingMissile = (
+  position: THREE.Vector3,
+  direction: THREE.Vector3,
+  targetEnemyId: number | null
+): ProjectileRuntime => {
+  const group = new THREE.Group();
+  const normalizedDirection = direction.clone().normalize();
+  const assets = getMissileAssets();
+  const body = new THREE.Mesh(assets.bodyGeometry, assets.bodyMaterial);
+  const nose = new THREE.Mesh(assets.noseGeometry, assets.noseMaterial);
+  const flare = new THREE.Sprite(assets.flareMaterial);
+  const finMaterial = new THREE.MeshBasicMaterial({
+    color: 0xffcf65,
+    transparent: true,
+    opacity: 0.82,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+  });
+  body.rotation.x = Math.PI / 2;
+  body.scale.set(1.18, 1.18, 1.28);
+  nose.rotation.x = -Math.PI / 2;
+  nose.position.z = -0.52;
+  flare.position.z = 0.58;
+  flare.scale.set(1.15, 1.15, 1);
+  for (const x of [-0.16, 0.16]) {
+    const fin = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.28, 0.18), finMaterial.clone());
+    fin.position.set(x, 0, 0.24);
+    group.add(fin);
+  }
+  const light = new THREE.PointLight(0xffcf65, 1.5, 8);
+  light.position.z = 0.35;
+  group.add(body, nose, flare, light);
+  group.position.copy(position);
+  group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), normalizedDirection);
+
+  return {
+    id: projectileId++,
+    blastRadius: 5.4,
+    damage: 12,
+    homing: true,
+    impactColor: 0xffcf65,
+    life: 4.5,
+    mesh: group,
+    owner: "player",
+    radius: 0.8,
+    targetEnemyId: targetEnemyId ?? undefined,
+    turnRate: 8.2,
+    velocity: normalizedDirection.multiplyScalar(34),
+    weaponId: "homing-missiles"
+  };
+};
+
+export const createPlasmaOrb = (position: THREE.Vector3, direction: THREE.Vector3): ProjectileRuntime => {
+  const group = new THREE.Group();
+  const normalizedDirection = direction.clone().normalize();
+  const assets = getPlasmaAssets();
+  const core = new THREE.Mesh(assets.coreGeometry, assets.coreMaterial);
+  const shell = new THREE.Mesh(assets.shellGeometry, assets.shellMaterial);
+  const halo = new THREE.Sprite(assets.haloMaterial);
+  const ringA = new THREE.Mesh(assets.ringGeometry, assets.ringMaterial);
+  const ringB = new THREE.Mesh(assets.ringGeometry, assets.ringMaterial.clone());
+  const light = new THREE.PointLight(0x7dffea, 3.4, 12);
+  ringA.rotation.x = Math.PI / 2;
+  ringB.rotation.y = Math.PI / 2.35;
+  halo.scale.set(3.1, 3.1, 1);
+  group.add(shell, core, ringA, ringB, halo, light);
+  group.position.copy(position);
+
+  return {
+    id: projectileId++,
+    blastRadius: 8.6,
+    damage: 10.5,
+    detonateOnExpire: true,
+    impactColor: 0x7dffea,
+    life: 1.05,
+    mesh: group,
+    owner: "player",
+    radius: 1.05,
+    velocity: normalizedDirection.multiplyScalar(25),
+    weaponId: "plasma-orb"
   };
 };
 
@@ -335,6 +584,34 @@ export const createExplosion = (
     group.add(sprite);
     velocity.push(direction.multiplyScalar(speed));
   }
+
+  const shockwave = new THREE.Mesh(
+    new THREE.RingGeometry(0.55 * scale, 1.0 * scale, 96),
+    new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.72,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending
+    })
+  );
+  shockwave.rotation.x = Math.PI / 2;
+  group.add(shockwave);
+  velocity.push(new THREE.Vector3());
+
+  const coreFlash = new THREE.Mesh(
+    new THREE.SphereGeometry(0.36 * scale, 24, 16),
+    new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.48,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending
+    })
+  );
+  group.add(coreFlash);
+  velocity.push(new THREE.Vector3());
 
   const flash = new THREE.PointLight(color, 2.2 * scale, 12 * scale);
   group.add(flash);
