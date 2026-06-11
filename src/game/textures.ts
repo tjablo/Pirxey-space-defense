@@ -2,6 +2,8 @@ import * as THREE from "three";
 import type { ServicePlanet } from "../data/services";
 import { mixColor, randomFromSeed } from "./math";
 
+const radialTextureCache = new Map<string, THREE.CanvasTexture>();
+
 export const createPlanetTexture = (service: ServicePlanet, index: number) => {
   const canvas = document.createElement("canvas");
   canvas.width = 1024;
@@ -113,6 +115,12 @@ export const createSunTexture = () => {
 };
 
 export const createRadialTexture = (inner: string, outer: string, alpha = 1) => {
+  const cacheKey = `${inner}|${outer}|${alpha}`;
+  const cached = radialTextureCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
   const canvas = document.createElement("canvas");
   canvas.width = 512;
   canvas.height = 512;
@@ -125,5 +133,6 @@ export const createRadialTexture = (inner: string, outer: string, alpha = 1) => 
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
+  radialTextureCache.set(cacheKey, texture);
   return texture;
 };

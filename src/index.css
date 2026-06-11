@@ -270,12 +270,18 @@ canvas.is-pointer-locked {
   line-height: 1.55;
 }
 
+.invasion-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
 .invasion-toast button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   min-height: 36px;
-  margin-top: 12px;
   border: 0;
   border-radius: 999px;
   background: #d74721;
@@ -285,6 +291,12 @@ canvas.is-pointer-locked {
   font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
+}
+
+.invasion-toast button.is-secondary {
+  border: 1px solid rgba(249, 249, 234, 0.16);
+  background: rgba(249, 249, 234, 0.08);
+  color: rgba(249, 249, 234, 0.82);
 }
 
 .planet-roster {
@@ -515,6 +527,17 @@ canvas.is-pointer-locked {
 
 .autopilot-cta:hover {
   background: #e04a23;
+}
+
+.defense-cta {
+  border-color: rgba(255, 207, 101, 0.52);
+  background: rgba(255, 207, 101, 0.16);
+  color: #ffcf65;
+  animation: autopilotPulse 1450ms ease-in-out infinite;
+}
+
+.defense-cta:hover {
+  background: rgba(255, 207, 101, 0.22);
 }
 
 .audio-toggle {

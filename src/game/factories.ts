@@ -6,6 +6,172 @@ let projectileId = 1;
 let enemyId = 1;
 let explosionId = 1;
 
+const SHARED_RESOURCE = "__pirxeySharedResource";
+
+const markShared = <T extends THREE.BufferGeometry | THREE.Material | THREE.Texture>(resource: T) => {
+  resource.userData[SHARED_RESOURCE] = true;
+  return resource;
+};
+
+const isShared = (resource: THREE.BufferGeometry | THREE.Material | null | undefined) =>
+  Boolean(resource?.userData[SHARED_RESOURCE]);
+
+type PlayerBoltAssets = {
+  beamGeometry: THREE.CapsuleGeometry;
+  beamMaterial: THREE.MeshBasicMaterial;
+  coreGeometry: THREE.CapsuleGeometry;
+  coreMaterial: THREE.MeshBasicMaterial;
+  tailGeometry: THREE.CylinderGeometry;
+  tailMaterial: THREE.MeshBasicMaterial;
+};
+
+type EnemyShotAssets = {
+  beamGeometry: THREE.CapsuleGeometry;
+  beamMaterial: THREE.MeshBasicMaterial;
+  coreGeometry: THREE.CapsuleGeometry;
+  coreMaterial: THREE.MeshBasicMaterial;
+  tailGeometry: THREE.CylinderGeometry;
+  tailMaterial: THREE.MeshBasicMaterial;
+};
+
+type EnemyBugAssets = {
+  bodyGeometry: THREE.SphereGeometry;
+  bodyMaterial: THREE.MeshStandardMaterial;
+  eyeGeometry: THREE.SphereGeometry;
+  eyeMaterial: THREE.MeshBasicMaterial;
+  legGeometry: THREE.CylinderGeometry;
+  shellGeometry: THREE.SphereGeometry;
+  shellMaterial: THREE.MeshStandardMaterial;
+  threatGlowMaterial: THREE.SpriteMaterial;
+};
+
+let playerBoltAssets: PlayerBoltAssets | null = null;
+let enemyShotAssets: EnemyShotAssets | null = null;
+let enemyBugAssets: EnemyBugAssets | null = null;
+
+const getPlayerBoltAssets = () => {
+  if (!playerBoltAssets) {
+    playerBoltAssets = {
+      beamGeometry: markShared(new THREE.CapsuleGeometry(0.075, 1.18, 6, 14)),
+      beamMaterial: markShared(
+        new THREE.MeshBasicMaterial({
+          color: 0x54ff3d,
+          transparent: true,
+          opacity: 0.38,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending
+        })
+      ),
+      coreGeometry: markShared(new THREE.CapsuleGeometry(0.045, 1.08, 6, 14)),
+      coreMaterial: markShared(
+        new THREE.MeshBasicMaterial({
+          color: 0x9cff7a,
+          transparent: true,
+          opacity: 1,
+          blending: THREE.AdditiveBlending
+        })
+      ),
+      tailGeometry: markShared(new THREE.CylinderGeometry(0.022, 0.072, 0.48, 10)),
+      tailMaterial: markShared(
+        new THREE.MeshBasicMaterial({
+          color: 0x2fdc45,
+          transparent: true,
+          opacity: 0.34,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending
+        })
+      )
+    };
+  }
+
+  return playerBoltAssets;
+};
+
+const getEnemyShotAssets = () => {
+  if (!enemyShotAssets) {
+    enemyShotAssets = {
+      beamGeometry: markShared(new THREE.CapsuleGeometry(0.09, 0.92, 6, 14)),
+      beamMaterial: markShared(
+        new THREE.MeshBasicMaterial({
+          color: 0xff1010,
+          transparent: true,
+          opacity: 0.42,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending
+        })
+      ),
+      coreGeometry: markShared(new THREE.CapsuleGeometry(0.055, 0.82, 6, 14)),
+      coreMaterial: markShared(
+        new THREE.MeshBasicMaterial({
+          color: 0xff2f2f,
+          transparent: true,
+          opacity: 1,
+          blending: THREE.AdditiveBlending
+        })
+      ),
+      tailGeometry: markShared(new THREE.CylinderGeometry(0.026, 0.088, 0.36, 10)),
+      tailMaterial: markShared(
+        new THREE.MeshBasicMaterial({
+          color: 0xd74721,
+          transparent: true,
+          opacity: 0.38,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending
+        })
+      )
+    };
+  }
+
+  return enemyShotAssets;
+};
+
+const getEnemyBugAssets = () => {
+  if (!enemyBugAssets) {
+    enemyBugAssets = {
+      bodyGeometry: markShared(new THREE.SphereGeometry(0.55, 24, 14)),
+      bodyMaterial: markShared(
+        new THREE.MeshStandardMaterial({
+          color: 0x19080f,
+          emissive: 0x7a1823,
+          emissiveIntensity: 0.48,
+          metalness: 0.22,
+          roughness: 0.42
+        })
+      ),
+      eyeGeometry: markShared(new THREE.SphereGeometry(0.075, 10, 8)),
+      eyeMaterial: markShared(
+        new THREE.MeshBasicMaterial({
+          color: 0xffcf65,
+          transparent: true,
+          opacity: 0.92
+        })
+      ),
+      legGeometry: markShared(new THREE.CylinderGeometry(0.025, 0.035, 0.86, 8)),
+      shellGeometry: markShared(new THREE.SphereGeometry(0.48, 20, 12)),
+      shellMaterial: markShared(
+        new THREE.MeshStandardMaterial({
+          color: 0xff5c2e,
+          emissive: 0xd74721,
+          emissiveIntensity: 0.62,
+          metalness: 0.08,
+          roughness: 0.38
+        })
+      ),
+      threatGlowMaterial: markShared(
+        new THREE.SpriteMaterial({
+          map: createRadialTexture("rgba(255,107,58,1)", "rgba(215,71,33,0)", 0.8),
+          transparent: true,
+          opacity: 0.48,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending
+        })
+      )
+    };
+  }
+
+  return enemyBugAssets;
+};
+
 export const attachShipCannons = (ship: THREE.Group) => {
   const cannonMaterial = new THREE.MeshStandardMaterial({
     color: 0x11101a,
@@ -39,35 +205,10 @@ export const attachShipCannons = (ship: THREE.Group) => {
 export const createPlayerBolt = (position: THREE.Vector3, direction: THREE.Vector3): ProjectileRuntime => {
   const group = new THREE.Group();
   const normalizedDirection = direction.clone().normalize();
-  const core = new THREE.Mesh(
-    new THREE.CapsuleGeometry(0.045, 1.08, 6, 14),
-    new THREE.MeshBasicMaterial({
-      color: 0x9cff7a,
-      transparent: true,
-      opacity: 1,
-      blending: THREE.AdditiveBlending
-    })
-  );
-  const beam = new THREE.Mesh(
-    new THREE.CapsuleGeometry(0.075, 1.18, 6, 14),
-    new THREE.MeshBasicMaterial({
-      color: 0x54ff3d,
-      transparent: true,
-      opacity: 0.38,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending
-    })
-  );
-  const tail = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.022, 0.072, 0.48, 10),
-    new THREE.MeshBasicMaterial({
-      color: 0x2fdc45,
-      transparent: true,
-      opacity: 0.34,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending
-    })
-  );
+  const assets = getPlayerBoltAssets();
+  const core = new THREE.Mesh(assets.coreGeometry, assets.coreMaterial);
+  const beam = new THREE.Mesh(assets.beamGeometry, assets.beamMaterial);
+  const tail = new THREE.Mesh(assets.tailGeometry, assets.tailMaterial);
   tail.position.y = -0.62;
   group.add(beam, core, tail);
   group.position.copy(position);
@@ -87,35 +228,10 @@ export const createPlayerBolt = (position: THREE.Vector3, direction: THREE.Vecto
 export const createEnemyShot = (position: THREE.Vector3, direction: THREE.Vector3, wave: number): ProjectileRuntime => {
   const group = new THREE.Group();
   const normalizedDirection = direction.clone().normalize();
-  const core = new THREE.Mesh(
-    new THREE.CapsuleGeometry(0.055, 0.82, 6, 14),
-    new THREE.MeshBasicMaterial({
-      color: 0xff2f2f,
-      transparent: true,
-      opacity: 1,
-      blending: THREE.AdditiveBlending
-    })
-  );
-  const beam = new THREE.Mesh(
-    new THREE.CapsuleGeometry(0.09, 0.92, 6, 14),
-    new THREE.MeshBasicMaterial({
-      color: 0xff1010,
-      transparent: true,
-      opacity: 0.42,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending
-    })
-  );
-  const tail = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.026, 0.088, 0.36, 10),
-    new THREE.MeshBasicMaterial({
-      color: 0xd74721,
-      transparent: true,
-      opacity: 0.38,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending
-    })
-  );
+  const assets = getEnemyShotAssets();
+  const core = new THREE.Mesh(assets.coreGeometry, assets.coreMaterial);
+  const beam = new THREE.Mesh(assets.beamGeometry, assets.beamMaterial);
+  const tail = new THREE.Mesh(assets.tailGeometry, assets.tailMaterial);
   tail.position.y = -0.5;
   group.add(beam, core, tail);
   group.position.copy(position);
@@ -138,60 +254,33 @@ export const createEnemyBug = (
   config: WaveConfig
 ): EnemyRuntime => {
   const group = new THREE.Group();
+  const assets = getEnemyBugAssets();
   group.position.copy(position);
   group.name = "void-bug";
 
-  const bodyMaterial = new THREE.MeshStandardMaterial({
-    color: 0x19080f,
-    emissive: 0x7a1823,
-    emissiveIntensity: 0.48,
-    metalness: 0.22,
-    roughness: 0.42
-  });
-  const shellMaterial = new THREE.MeshStandardMaterial({
-    color: 0xff5c2e,
-    emissive: 0xd74721,
-    emissiveIntensity: 0.62,
-    metalness: 0.08,
-    roughness: 0.38
-  });
-  const eyeMaterial = new THREE.MeshBasicMaterial({
-    color: 0xffcf65,
-    transparent: true,
-    opacity: 0.92
-  });
-
-  const body = new THREE.Mesh(new THREE.SphereGeometry(0.55, 24, 14), bodyMaterial);
+  const body = new THREE.Mesh(assets.bodyGeometry, assets.bodyMaterial);
   body.scale.set(1.0, 0.62, 1.55);
   group.add(body);
 
-  const shell = new THREE.Mesh(new THREE.SphereGeometry(0.48, 20, 12), shellMaterial);
+  const shell = new THREE.Mesh(assets.shellGeometry, assets.shellMaterial);
   shell.position.z = -0.16;
   shell.scale.set(1.12, 0.38, 1.0);
   group.add(shell);
 
   for (const x of [-0.28, 0.28]) {
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.075, 10, 8), eyeMaterial);
+    const eye = new THREE.Mesh(assets.eyeGeometry, assets.eyeMaterial);
     eye.position.set(x, 0.16, -0.58);
     group.add(eye);
   }
 
-  const threatGlow = new THREE.Sprite(
-    new THREE.SpriteMaterial({
-      map: createRadialTexture("rgba(255,107,58,1)", "rgba(215,71,33,0)", 0.8),
-      transparent: true,
-      opacity: 0.48,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending
-    })
-  );
+  const threatGlow = new THREE.Sprite(assets.threatGlowMaterial);
   threatGlow.position.set(0, 0, 0.1);
   threatGlow.scale.set(2.2, 2.2, 1);
   group.add(threatGlow);
 
   for (const side of [-1, 1]) {
     for (let i = 0; i < 3; i += 1) {
-      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.035, 0.86, 8), bodyMaterial);
+      const leg = new THREE.Mesh(assets.legGeometry, assets.bodyMaterial);
       leg.position.set(side * (0.34 + i * 0.12), -0.08, -0.18 + i * 0.28);
       leg.rotation.z = side * (Math.PI / 3.5);
       leg.rotation.x = Math.PI / 2.4;
@@ -263,11 +352,17 @@ export const createExplosion = (
 export const disposeObject = (object: THREE.Object3D) => {
   object.traverse((entry) => {
     if (entry instanceof THREE.Mesh || entry instanceof THREE.Points || entry instanceof THREE.Line || entry instanceof THREE.Sprite) {
-      entry.geometry?.dispose();
+      if (!isShared(entry.geometry)) {
+        entry.geometry?.dispose();
+      }
       const material = entry.material;
       if (Array.isArray(material)) {
-        material.forEach((item) => item.dispose());
-      } else {
+        material.forEach((item) => {
+          if (!isShared(item)) {
+            item.dispose();
+          }
+        });
+      } else if (!isShared(material)) {
         material?.dispose();
       }
     }

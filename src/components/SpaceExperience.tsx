@@ -399,16 +399,50 @@ const createShip = () => {
       map: glowTexture,
       color: 0xffcf65,
       transparent: true,
-      opacity: 0.82,
+      opacity: 0,
       depthWrite: false,
       blending: THREE.AdditiveBlending
     })
   );
+  glow.name = "engine-flame-halo";
   glow.position.z = 2.55;
   glow.scale.set(2.4, 2.4, 1);
   ship.add(glow);
 
-  const engineLight = new THREE.PointLight(0xd74721, 1.8, 18);
+  const outerFlameMaterial = new THREE.MeshBasicMaterial({
+    color: 0xd74721,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide
+  });
+  const outerFlameGeometry = new THREE.ConeGeometry(0.46, 1, 32, 1, true);
+  outerFlameGeometry.rotateX(Math.PI / 2);
+  const outerFlame = new THREE.Mesh(outerFlameGeometry, outerFlameMaterial);
+  outerFlame.name = "engine-flame-outer";
+  outerFlame.position.z = 2.7;
+  outerFlame.visible = false;
+  ship.add(outerFlame);
+
+  const innerFlameMaterial = new THREE.MeshBasicMaterial({
+    color: 0xfff1a6,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide
+  });
+  const innerFlameGeometry = new THREE.ConeGeometry(0.2, 1, 24, 1, true);
+  innerFlameGeometry.rotateX(Math.PI / 2);
+  const innerFlame = new THREE.Mesh(innerFlameGeometry, innerFlameMaterial);
+  innerFlame.name = "engine-flame-inner";
+  innerFlame.position.z = 2.66;
+  innerFlame.visible = false;
+  ship.add(innerFlame);
+
+  const engineLight = new THREE.PointLight(0xd74721, 0, 18);
+  engineLight.name = "engine-flame-light";
   engineLight.position.z = 2.4;
   ship.add(engineLight);
 
@@ -508,7 +542,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     (gamePhase === "Paused" && combatHud.enemies > 0);
   const isBattleActive = gamePhase === "Running" || (gamePhase === "Paused" && combatHud.enemies > 0);
   const isBattleStarted = gamePhase === "Countdown" || gamePhase === "Running" || gamePhase === "Paused";
-  const canUseNavigation = !isBattleActive;
+  const canUseNavigation = gamePhase === "Awaiting" || gamePhase === "Exploring";
 
   useEffect(() => {
     selectedIdRef.current = selectedId;
@@ -525,10 +559,10 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
   }, [isBattleStarted]);
 
   useEffect(() => {
-    if (isBattleActive) {
+    if (!canUseNavigation) {
       setShowDestinations(false);
     }
-  }, [isBattleActive]);
+  }, [canUseNavigation]);
 
   const selectTarget = useCallback(
     (id: string) => {
@@ -571,6 +605,13 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     setInitialMatchPhase("Exploring");
     setMatchId((value) => value + 1);
   }, []);
+
+  const startDefenseFromExplore = useCallback(() => {
+    startBattleAudio();
+    gamePhaseRef.current = "Countdown";
+    setInitialMatchPhase("Countdown");
+    setGamePhase("Countdown");
+  }, [startBattleAudio]);
 
   const toggleAudioMuted = useCallback(() => {
     setAudioMuted((current) => {
@@ -625,6 +666,8 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     let runtimeShipHealth = PLAYER_MAX_HEALTH;
     let shipDestroyed = false;
     let shipHitFlash = 0;
+    let thrustHold = 0;
+    let flamePower = 0;
     const keys = new Set<string>();
     const enemies: EnemyRuntime[] = [];
     const projectiles: ProjectileRuntime[] = [];
@@ -868,11 +911,68 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     ship.add(shipHitLight);
     scene.add(ship);
 
+    const flameOuter = ship.getObjectByName("engine-flame-outer");
+    const flameInner = ship.getObjectByName("engine-flame-inner");
+    const flameHalo = ship.getObjectByName("engine-flame-halo");
+    const flameLight = ship.getObjectByName("engine-flame-light");
+    const flameOuterMaterial =
+      flameOuter instanceof THREE.Mesh && flameOuter.material instanceof THREE.MeshBasicMaterial
+        ? flameOuter.material
+        : null;
+    const flameInnerMaterial =
+      flameInner instanceof THREE.Mesh && flameInner.material instanceof THREE.MeshBasicMaterial
+        ? flameInner.material
+        : null;
+    const flameHaloMaterial =
+      flameHalo instanceof THREE.Sprite && flameHalo.material instanceof THREE.SpriteMaterial
+        ? flameHalo.material
+        : null;
+
+    const updateShipFlames = (power: number, elapsedTime: number, boosting: boolean) => {
+      const visible = power > 0.015 && !shipDestroyed;
+      const flicker =
+        visible ? 0.88 + Math.sin(elapsedTime * 42) * 0.08 + Math.sin(elapsedTime * 71 + 1.7) * 0.04 : 0;
+      const boostScale = boosting ? 1.2 : 1;
+      const outerLength = (0.72 + power * 2.55) * flicker * boostScale;
+      const innerLength = (0.48 + power * 1.85) * flicker * boostScale;
+      const outerRadius = 0.36 + power * 0.24 + (boosting ? 0.08 : 0);
+      const innerRadius = 0.14 + power * 0.12;
+
+      if (flameOuter instanceof THREE.Mesh) {
+        flameOuter.visible = visible;
+        flameOuter.scale.set(outerRadius, outerRadius, Math.max(0.001, outerLength));
+        flameOuter.position.z = 2.5 + outerLength * 0.5;
+      }
+      if (flameInner instanceof THREE.Mesh) {
+        flameInner.visible = visible;
+        flameInner.scale.set(innerRadius, innerRadius, Math.max(0.001, innerLength));
+        flameInner.position.z = 2.48 + innerLength * 0.5;
+      }
+      if (flameHalo instanceof THREE.Sprite) {
+        flameHalo.visible = visible;
+        flameHalo.scale.setScalar((1.15 + power * 2.35) * Math.max(0.001, flicker));
+      }
+      if (flameOuterMaterial) {
+        flameOuterMaterial.opacity = visible ? clamp(0.2 + power * 0.42, 0, 0.72) : 0;
+      }
+      if (flameInnerMaterial) {
+        flameInnerMaterial.opacity = visible ? clamp(0.18 + power * 0.38, 0, 0.62) : 0;
+      }
+      if (flameHaloMaterial) {
+        flameHaloMaterial.opacity = visible ? clamp(0.18 + power * 0.45, 0, 0.74) : 0;
+      }
+      if (flameLight instanceof THREE.PointLight) {
+        flameLight.intensity = visible ? power * (boosting ? 5.2 : 3.8) : 0;
+        flameLight.distance = 10 + power * 16;
+      }
+    };
+
     const setMode = (mode: FlightMode) => {
       setTelemetry((previous) => (previous.mode === mode ? previous : { ...previous, mode }));
     };
 
-    const isNavigationLocked = () => gamePhaseRef.current === "Running" || (gamePhaseRef.current === "Paused" && enemies.length > 0);
+    const canUsePlanetNavigation = () => gamePhaseRef.current === "Awaiting" || gamePhaseRef.current === "Exploring";
+    const isNavigationLocked = () => !canUsePlanetNavigation();
 
     const transitionGamePhase = (phase: CombatHud["phase"]) => {
       gamePhaseRef.current = phase;
@@ -1266,7 +1366,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       if (event.code === "KeyE") {
         dockCurrent();
       }
-      if (event.code === "KeyF") {
+      if (event.code === "KeyF" && !event.repeat) {
         firePlayerShot();
       }
       if (event.code === "KeyV") {
@@ -1289,6 +1389,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     };
 
     let dragging = false;
+    let pointerFireHeld = false;
     let lastX = 0;
     let lastY = 0;
     let pointerLocked = false;
@@ -1319,9 +1420,15 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     };
 
     const onPointerDown = (event: PointerEvent) => {
+      if (event.button !== 0) {
+        return;
+      }
+      pointerFireHeld = true;
+      firePlayerShot();
       if (pointerLocked || gamePhaseRef.current === "Game over" || shipDestroyed || dockedTarget.active) {
         return;
       }
+      event.preventDefault();
       renderer.domElement.focus({ preventScroll: true });
       dragging = true;
       lastX = event.clientX;
@@ -1352,18 +1459,28 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     };
 
     const onPointerUp = (event: PointerEvent) => {
+      pointerFireHeld = false;
       dragging = false;
       if (renderer.domElement.hasPointerCapture(event.pointerId)) {
         renderer.domElement.releasePointerCapture(event.pointerId);
       }
     };
 
+    const onWindowBlur = () => {
+      keys.clear();
+      pointerFireHeld = false;
+      dragging = false;
+    };
+
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("blur", onWindowBlur);
     renderer.domElement.addEventListener("pointerdown", onPointerDown);
     renderer.domElement.addEventListener("pointermove", onPointerMove);
     renderer.domElement.addEventListener("pointerup", onPointerUp);
     renderer.domElement.addEventListener("pointerleave", onPointerUp);
+    renderer.domElement.addEventListener("pointercancel", onPointerUp);
     document.addEventListener("pointerlockchange", syncPointerLockMode);
 
     const resizeObserver = new ResizeObserver(() => {
@@ -1403,6 +1520,9 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       starFieldB.rotation.y -= delta * 0.003;
       dust.rotation.y += delta * 0.004;
       fireCooldown = Math.max(0, fireCooldown - delta);
+      if (keys.has("KeyF") || pointerFireHeld) {
+        firePlayerShot();
+      }
       shipHitFlash = Math.max(0, shipHitFlash - delta);
       const shipFlashRatio = clamp(shipHitFlash / 0.34, 0, 1);
       shipShieldMaterial.opacity = shipFlashRatio * 0.36;
@@ -1516,6 +1636,10 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
         }
       }
 
+      const boostPressed = keys.has("ShiftLeft") || keys.has("ShiftRight");
+      const manualThrusting =
+        !dockedTarget.active && !autopilotTarget.active && !shipDestroyed && keys.has("KeyW");
+
       if (dockedTarget.active) {
         const dockRuntime =
           planetRuntimes.find((planet) => planet.service.id === dockedTarget.id) ?? selectedRuntime;
@@ -1570,7 +1694,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
         ship.rotation.z *= 1 - delta * 0.54;
 
         forward.set(0, 0, -1).applyQuaternion(ship.quaternion).normalize();
-        const thrust = keys.has("KeyW") ? (keys.has("ShiftLeft") || keys.has("ShiftRight") ? 32 : 17) : 0;
+        const thrust = manualThrusting ? (boostPressed ? 32 : 17) : 0;
         if (thrust > 0) {
           velocity.addScaledVector(forward, thrust * delta);
         }
@@ -1587,6 +1711,17 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
 
       velocity.multiplyScalar(1 - delta * 0.12);
       velocity.clampLength(0, 34);
+      thrustHold = manualThrusting ? clamp(thrustHold + delta * (boostPressed ? 0.92 : 0.72), 0, 1) : Math.max(0, thrustHold - delta * 2.8);
+      const speedRatio = clamp(velocity.length() / 34, 0, 1);
+      const targetFlamePower = manualThrusting
+        ? clamp(0.18 + thrustHold * 0.5 + speedRatio * 0.3 + (boostPressed ? 0.42 : 0), 0, 1.35)
+        : 0;
+      const flameResponse = targetFlamePower > flamePower ? 1 - Math.pow(0.018, delta) : 1 - Math.pow(0.001, delta);
+      flamePower += (targetFlamePower - flamePower) * flameResponse;
+      if (!manualThrusting && flamePower < 0.006) {
+        flamePower = 0;
+      }
+      updateShipFlames(flamePower, elapsed, boostPressed && manualThrusting);
       ship.position.addScaledVector(velocity, delta);
       ship.position.y = clamp(ship.position.y, -16, 28);
 
@@ -1792,6 +1927,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
         });
         renderer.domElement.dataset.gameStats = JSON.stringify({
           enemies: enemies.length,
+          flamePower: Number(flamePower.toFixed(3)),
           phase: gamePhaseRef.current,
           planetHealth,
           planets: planetRuntimes.map((planet) => ({
@@ -1824,6 +1960,8 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       resizeObserver.disconnect();
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("blur", onWindowBlur);
       document.removeEventListener("pointerlockchange", syncPointerLockMode);
       if (document.pointerLockElement === renderer.domElement) {
         document.exitPointerLock();
@@ -1832,6 +1970,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       renderer.domElement.removeEventListener("pointermove", onPointerMove);
       renderer.domElement.removeEventListener("pointerup", onPointerUp);
       renderer.domElement.removeEventListener("pointerleave", onPointerUp);
+      renderer.domElement.removeEventListener("pointercancel", onPointerUp);
       bridgeRef.current = null;
       if (window.__pirxeySpaceDebug === debugApi) {
         delete window.__pirxeySpaceDebug;
@@ -1898,9 +2037,14 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       {gamePhase === "Awaiting" ? (
         <section className="invasion-toast" aria-label="Alien invasion alert">
           <p>Alien lifeforms are beginning their invasion. Will you help defend the Pirxey planets?</p>
-          <button type="button" onClick={startGame}>
-            Yes, launch
-          </button>
+          <div className="invasion-actions">
+            <button type="button" onClick={startGame}>
+              Yes, launch
+            </button>
+            <button type="button" className="is-secondary" onClick={enterExploreMode}>
+              Explore first
+            </button>
+          </div>
         </section>
       ) : null}
 
@@ -1999,6 +2143,12 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
                   <Navigation className="h-4 w-4" />
                   Autopilot
                 </button>
+                {gamePhase === "Exploring" ? (
+                  <button className="toolbar-button defense-cta" type="button" onClick={startDefenseFromExplore}>
+                    <Play className="h-4 w-4" />
+                    Start defense
+                  </button>
+                ) : null}
               </>
             ) : null}
             {gamePhase === "Running" || gamePhase === "Countdown" || gamePhase === "Paused" ? (
@@ -2038,8 +2188,8 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
               <ControlHint icon={<Compass />} label="A / D" value="yaw" />
               <ControlHint icon={<MousePointer2 />} label="Drag" value="look around" />
               <ControlHint icon={<MousePointer2 />} label="V" value="toggle camera" />
-              <ControlHint icon={<Target />} label="E" value="dock nearby" />
-              <ControlHint icon={<Crosshair />} label="F" value="fire cannons" />
+              <ControlHint icon={<Target />} label="E" value={canUseNavigation ? "dock nearby" : "disabled in battle"} />
+              <ControlHint icon={<Crosshair />} label="Hold Click / F" value="fire cannons" />
               <ControlHint icon={<Navigation />} label="Space / C" value="vertical" />
             </div>
             <div className="camera-mode-note">
@@ -2056,8 +2206,8 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
               <Metric label="target" value={formatDistance(telemetry.distance)} />
               <Metric
                 label="dock"
-                value={isBattleActive ? "locked" : nearby?.canDock ? "ready" : "scan"}
-                tone={!isBattleActive && nearby?.canDock ? "hot" : "cool"}
+                value={!canUseNavigation ? "locked" : nearby?.canDock ? "ready" : "scan"}
+                tone={canUseNavigation && nearby?.canDock ? "hot" : "cool"}
               />
             </div>
           </div>
