@@ -36,10 +36,321 @@ canvas {
   display: block;
 }
 
+canvas.is-pointer-locked {
+  cursor: none;
+}
+
 .label-layer {
   position: absolute;
   inset: 0;
   pointer-events: none;
+}
+
+.combat-hud {
+  position: absolute;
+  right: 24px;
+  bottom: 24px;
+  z-index: 12;
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  max-width: calc(100vw - 48px);
+}
+
+.combat-card {
+  min-width: 82px;
+  border: 1px solid rgba(249, 249, 234, 0.14);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(249, 249, 234, 0.08), rgba(215, 71, 33, 0.08)),
+    rgba(6, 4, 17, 0.68);
+  box-shadow: 0 16px 50px rgba(0, 0, 0, 0.3);
+  padding: 9px 11px;
+  backdrop-filter: blur(16px);
+}
+
+.combat-card-wide {
+  width: 190px;
+}
+
+.combat-card span {
+  display: block;
+  overflow: hidden;
+  color: rgba(249, 249, 234, 0.52);
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.combat-card strong {
+  display: block;
+  overflow: hidden;
+  margin-top: 7px;
+  color: #ffcf65;
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-size: 18px;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.planet-health,
+.ship-health {
+  height: 8px;
+  margin-top: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(249, 249, 234, 0.12);
+}
+
+.planet-health i,
+.ship-health i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  transition: width 180ms ease;
+}
+
+.planet-health i {
+  background: linear-gradient(90deg, #d74721, #ffcf65, #5aa6bd);
+}
+
+.ship-health i {
+  background: linear-gradient(90deg, #d74721, #6fb5c8, #f9f9ea);
+}
+
+.game-crosshair {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 9;
+  width: 58px;
+  height: 58px;
+  border: 1px solid rgba(90, 166, 189, 0.52);
+  border-radius: 999px;
+  box-shadow:
+    0 0 18px rgba(90, 166, 189, 0.26),
+    inset 0 0 18px rgba(215, 71, 33, 0.14);
+  opacity: 0.88;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+}
+
+.game-crosshair::before,
+.game-crosshair::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  background: rgba(249, 249, 234, 0.84);
+  box-shadow: 0 0 12px rgba(255, 207, 101, 0.36);
+  transform: translate(-50%, -50%);
+}
+
+.game-crosshair::before {
+  width: 2px;
+  height: 18px;
+}
+
+.game-crosshair::after {
+  width: 18px;
+  height: 2px;
+}
+
+.round-banner {
+  position: absolute;
+  top: 104px;
+  left: 50%;
+  z-index: 26;
+  min-width: 190px;
+  border: 1px solid rgba(255, 207, 101, 0.28);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(255, 207, 101, 0.14), rgba(90, 166, 189, 0.08)),
+    rgba(6, 4, 17, 0.76);
+  box-shadow: 0 20px 90px rgba(0, 0, 0, 0.42);
+  padding: 12px 18px;
+  text-align: center;
+  pointer-events: none;
+  transform: translateX(-50%);
+  backdrop-filter: blur(16px);
+}
+
+.round-banner span {
+  display: block;
+  color: rgba(249, 249, 234, 0.62);
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.round-banner strong {
+  display: block;
+  margin-top: 7px;
+  color: #ffcf65;
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-size: 32px;
+  line-height: 1;
+}
+
+.round-banner.is-paused strong {
+  color: #5aa6bd;
+  font-size: 26px;
+}
+
+.round-banner.is-danger {
+  border-color: rgba(215, 71, 33, 0.46);
+  pointer-events: auto;
+}
+
+.round-banner.is-danger strong {
+  color: #d74721;
+  font-size: 26px;
+}
+
+.round-actions {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 13px;
+}
+
+.round-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  border: 1px solid rgba(249, 249, 234, 0.14);
+  border-radius: 999px;
+  background: rgba(249, 249, 234, 0.1);
+  color: #f9f9ea;
+  gap: 7px;
+  padding: 0 12px;
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  pointer-events: auto;
+}
+
+.round-actions button:hover {
+  border-color: rgba(255, 207, 101, 0.45);
+  background: rgba(249, 249, 234, 0.16);
+}
+
+.invasion-toast {
+  position: absolute;
+  top: 92px;
+  right: 24px;
+  z-index: 30;
+  width: min(330px, calc(100vw - 48px));
+  border: 1px solid rgba(255, 207, 101, 0.24);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(215, 71, 33, 0.16), rgba(90, 166, 189, 0.08)),
+    rgba(6, 4, 17, 0.82);
+  box-shadow: 0 24px 90px rgba(0, 0, 0, 0.44);
+  padding: 14px;
+  color: #f9f9ea;
+  backdrop-filter: blur(18px);
+}
+
+.invasion-toast p {
+  margin: 0;
+  color: rgba(249, 249, 234, 0.78);
+  font-family: "Fira Sans", system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.invasion-toast button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  margin-top: 12px;
+  border: 0;
+  border-radius: 999px;
+  background: #d74721;
+  color: #f9f9ea;
+  padding: 0 14px;
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.planet-roster {
+  position: absolute;
+  top: 94px;
+  left: 24px;
+  z-index: 12;
+  display: grid;
+  width: min(218px, calc(100vw - 48px));
+  gap: 5px;
+}
+
+.planet-status {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 5px 8px;
+  border: 1px solid rgba(249, 249, 234, 0.12);
+  border-radius: 6px;
+  background: rgba(6, 4, 17, 0.62);
+  padding: 6px 8px;
+  backdrop-filter: blur(14px);
+}
+
+.planet-status span,
+.planet-status strong {
+  overflow: hidden;
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.planet-status span {
+  color: rgba(249, 249, 234, 0.72);
+}
+
+.planet-status strong {
+  color: #ffcf65;
+}
+
+.planet-status i {
+  grid-column: 1 / -1;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(249, 249, 234, 0.11);
+}
+
+.planet-status b {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #d74721, #ffcf65, #5aa6bd);
+  transition: width 180ms ease;
+}
+
+.planet-status.is-destroyed {
+  opacity: 0.48;
+}
+
+.planet-status.is-destroyed strong {
+  color: #d74721;
 }
 
 .service-label {
@@ -100,32 +411,21 @@ canvas {
 }
 
 .pirxey-mark {
-  position: relative;
-  min-width: 132px;
-  color: #f9f9ea;
-  font-family: "Space Grotesk", system-ui, sans-serif;
-  font-size: 30px;
-  font-weight: 700;
-  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  width: 158px;
+  min-width: 158px;
+  height: 40px;
 }
 
-.pirxey-mark::after {
-  content: "";
-  position: absolute;
-  left: 2px;
-  bottom: -3px;
-  width: 82px;
-  height: 2px;
-  background: #f9f9ea;
-  opacity: 0.9;
-}
-
-.pirxey-mark span {
-  display: inline-block;
-  margin-left: 3px;
-  color: #f9f9ea;
-  font-size: 18px;
-  transform: rotate(26deg) translateY(4px);
+.pirxey-logo {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 40px;
+  object-fit: contain;
+  object-position: left center;
+  filter: drop-shadow(0 0 18px rgba(249, 249, 234, 0.16));
 }
 
 .hud-panel,
@@ -217,6 +517,37 @@ canvas {
   background: #e04a23;
 }
 
+.audio-toggle {
+  min-width: 42px;
+  border-color: rgba(90, 166, 189, 0.52);
+  background: rgba(90, 166, 189, 0.18);
+  color: #f9f9ea;
+  padding: 0 11px;
+  animation: audioPulse 1450ms ease-in-out infinite;
+}
+
+.audio-toggle:hover {
+  border-color: rgba(255, 207, 101, 0.42);
+  background: rgba(90, 166, 189, 0.24);
+}
+
+.audio-toggle svg {
+  color: #6fb5c8;
+  filter: drop-shadow(0 0 8px rgba(111, 181, 200, 0.62));
+}
+
+.audio-toggle.is-muted {
+  border-color: rgba(249, 249, 234, 0.12);
+  background: rgba(249, 249, 234, 0.06);
+  animation: none;
+  box-shadow: none;
+}
+
+.audio-toggle.is-muted svg {
+  color: rgba(249, 249, 234, 0.52);
+  filter: none;
+}
+
 .service-panel.is-stowed {
   display: none;
   pointer-events: none;
@@ -249,6 +580,53 @@ canvas {
 .control-icon svg {
   width: 15px;
   height: 15px;
+}
+
+.camera-mode-note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 12px;
+  border: 1px solid rgba(90, 166, 189, 0.22);
+  border-radius: 6px;
+  background: rgba(8, 14, 21, 0.46);
+  padding: 8px 9px;
+}
+
+.camera-mode-note span {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  color: rgba(249, 249, 234, 0.7);
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.camera-mode-note svg {
+  flex: 0 0 auto;
+  color: #5aa6bd;
+}
+
+.camera-mode-note button {
+  flex: 0 0 auto;
+  border: 1px solid rgba(249, 249, 234, 0.14);
+  border-radius: 999px;
+  background: rgba(249, 249, 234, 0.08);
+  color: #f9f9ea;
+  padding: 6px 9px;
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.camera-mode-note button:hover {
+  border-color: rgba(90, 166, 189, 0.48);
+  background: rgba(90, 166, 189, 0.16);
 }
 
 .metric {
@@ -328,6 +706,18 @@ canvas {
   border-color: rgba(255, 207, 101, 0.46);
   background: rgba(215, 71, 33, 0.15);
   transform: translateY(-1px);
+}
+
+.service-target:disabled,
+.service-target.is-destroyed {
+  cursor: not-allowed;
+  opacity: 0.48;
+  transform: none;
+}
+
+.service-target.is-destroyed .service-dot {
+  background: #d74721;
+  box-shadow: 0 0 18px rgba(215, 71, 33, 0.7);
 }
 
 .service-index {
@@ -497,7 +887,29 @@ canvas {
   }
 }
 
+@keyframes audioPulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 0 rgba(90, 166, 189, 0.42),
+      0 14px 38px rgba(90, 166, 189, 0.24);
+  }
+  50% {
+    box-shadow:
+      0 0 0 9px rgba(90, 166, 189, 0),
+      0 18px 52px rgba(255, 207, 101, 0.3);
+  }
+}
+
 @media (max-width: 1023px) {
+  .planet-roster {
+    top: 118px;
+  }
+
+  .invasion-toast {
+    top: 86px;
+  }
+
   .hud-panel,
   .service-panel {
     width: min(100%, 520px);
@@ -529,12 +941,54 @@ canvas {
   }
 
   .pirxey-mark {
-    min-width: 104px;
-    font-size: 24px;
+    width: 126px;
+    min-width: 126px;
+    height: 32px;
+  }
+
+  .pirxey-logo {
+    max-height: 32px;
   }
 
   .service-panel {
     padding: 12px;
+  }
+
+  .game-crosshair {
+    width: 48px;
+    height: 48px;
+  }
+
+  .round-banner {
+    top: 142px;
+    min-width: 164px;
+    padding: 10px 14px;
+  }
+
+  .round-banner strong {
+    font-size: 26px;
+  }
+
+  .invasion-toast {
+    top: 150px;
+    right: 14px;
+    left: 14px;
+    width: auto;
+  }
+
+  .planet-roster {
+    top: 282px;
+    left: 14px;
+    width: min(198px, calc(100vw - 28px));
+  }
+
+  .planet-status {
+    padding: 5px 7px;
+  }
+
+  .planet-status span,
+  .planet-status strong {
+    font-size: 9px;
   }
 
   .flight-toolbar {
@@ -542,6 +996,24 @@ canvas {
     justify-content: space-between;
     gap: 6px;
     border-radius: 8px;
+  }
+
+  .combat-hud {
+    right: 16px;
+    bottom: 14px;
+    left: 16px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .combat-card {
+    min-width: 70px;
+    padding: 8px 9px;
+  }
+
+  .combat-card-wide {
+    order: 4;
+    width: 100%;
   }
 
   .toolbar-button {

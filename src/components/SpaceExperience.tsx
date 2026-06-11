@@ -1,18 +1,30 @@
 import {
   Compass,
+  Crosshair,
   Gauge,
   ListChecks,
+  Pause,
+  Play,
   MousePointer2,
   Navigation,
   Radio,
+  RotateCcw,
   Rocket,
+  Telescope,
   Target,
+  Volume2,
+  VolumeX,
   X
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { CSS2DObject, CSS2DRenderer } from "three/examples/jsm/renderers/CSS2DRenderer.js";
 import type { ServicePlanet } from "../data/services";
+import { createGameAudio } from "../game/audio";
+import { attachShipCannons, createEnemyBug, createEnemyShot, createExplosion, createPlayerBolt, disposeObject } from "../game/factories";
+import { SOUNDTRACK_URLS } from "../game/soundtrack";
+import type { CombatHud, EnemyRuntime, ExplosionRuntime, ProjectileRuntime } from "../game/types";
+import { createSpawnPosition, getWaveConfig } from "../game/waves";
 
 type FlightMode = "Manual" | "Autopilot" | "Docked";
 
@@ -34,6 +46,15 @@ type NearbyService = {
   canDock: boolean;
 };
 
+type CameraMode = "Drag aim" | "Mouse aim";
+
+type PlanetHudItem = {
+  id: string;
+  name: string;
+  health: number;
+  destroyed: boolean;
+};
+
 type PlanetRuntime = {
   service: ServicePlanet;
   orbit: THREE.Object3D;
@@ -41,12 +62,16 @@ type PlanetRuntime = {
   group: THREE.Group;
   ring: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
   worldPosition: THREE.Vector3;
+  health: number;
+  destroyed: boolean;
+  maxHealth: number;
 };
 
 type SceneBridge = {
   flyTo: (id: string) => void;
   dockCurrent: () => void;
   releaseDock: () => void;
+  toggleCameraMode: () => void;
 };
 
 declare global {
@@ -399,6 +424,18 @@ const formatDistance = (value: number | null) => {
   return `${Math.max(0, value).toFixed(1)} au`;
 };
 
+const PLAYER_MAX_HEALTH = 100;
+
+const createCombatHudState = (phase: CombatHud["phase"]): CombatHud => ({
+  enemies: 0,
+  phase,
+  planetHealth: 100,
+  roundCountdown: null,
+  score: 0,
+  threat: phase === "Exploring" ? "Exploration mode" : "Scanning",
+  wave: 0
+});
+
 export function SpaceExperience({ services }: SpaceExperienceProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const bridgeRef = useRef<SceneBridge | null>(null);
@@ -412,28 +449,161 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
   });
   const [nearby, setNearby] = useState<NearbyService | null>(null);
   const [dockedService, setDockedService] = useState<ServicePlanet | null>(null);
+  const [cameraMode, setCameraMode] = useState<CameraMode>("Drag aim");
   const [showControls, setShowControls] = useState(false);
   const [showDestinations, setShowDestinations] = useState(false);
+  const [destroyedPlanetIds, setDestroyedPlanetIds] = useState<string[]>([]);
+  const [matchId, setMatchId] = useState(0);
+  const [initialMatchPhase, setInitialMatchPhase] = useState<CombatHud["phase"]>("Awaiting");
+  const [shipHealth, setShipHealth] = useState(PLAYER_MAX_HEALTH);
+  const [planetHud, setPlanetHud] = useState<PlanetHudItem[]>(() =>
+    services.map((service) => ({
+      destroyed: false,
+      health: 100,
+      id: service.id,
+      name: service.name
+    }))
+  );
+  const [combatHud, setCombatHud] = useState<CombatHud>(() => createCombatHudState("Awaiting"));
+  const [gamePhase, setGamePhase] = useState<CombatHud["phase"]>("Awaiting");
+  const gamePhaseRef = useRef<CombatHud["phase"]>("Awaiting");
+  const phaseBeforePauseRef = useRef<CombatHud["phase"]>("Running");
+  const audioRef = useRef(createGameAudio());
+  const [audioMuted, setAudioMuted] = useState(() => audioRef.current.isMuted());
+
+  useEffect(() => {
+    gamePhaseRef.current = gamePhase;
+  }, [gamePhase]);
+
+  useEffect(() => {
+    setDestroyedPlanetIds([]);
+    setPlanetHud(
+      services.map((service) => ({
+        destroyed: false,
+        health: 100,
+        id: service.id,
+        name: service.name
+      }))
+    );
+    setDockedService(null);
+    setNearby(null);
+    setCameraMode("Drag aim");
+    setShowDestinations(false);
+    setShipHealth(PLAYER_MAX_HEALTH);
+    setCombatHud(createCombatHudState(initialMatchPhase));
+    gamePhaseRef.current = initialMatchPhase;
+    setGamePhase(initialMatchPhase);
+  }, [initialMatchPhase, matchId, services]);
 
   const selectedService = useMemo(
     () => services.find((service) => service.id === selectedId) ?? services[0],
     [selectedId, services]
   );
+  const showCombatHud =
+    gamePhase === "Running" || gamePhase === "Game over" || (gamePhase === "Paused" && combatHud.enemies > 0);
+  const showPlanetRoster =
+    gamePhase === "Countdown" ||
+    gamePhase === "Running" ||
+    gamePhase === "Game over" ||
+    (gamePhase === "Paused" && combatHud.enemies > 0);
+  const isBattleActive = gamePhase === "Running" || (gamePhase === "Paused" && combatHud.enemies > 0);
+  const isBattleStarted = gamePhase === "Countdown" || gamePhase === "Running" || gamePhase === "Paused";
+  const canUseNavigation = !isBattleActive;
 
   useEffect(() => {
     selectedIdRef.current = selectedId;
   }, [selectedId]);
 
-  const selectTarget = useCallback((id: string) => {
-    setSelectedId(id);
-    selectedIdRef.current = id;
-    setShowDestinations(false);
-    bridgeRef.current?.flyTo(id);
-  }, []);
+  useEffect(() => {
+    audioRef.current.setMuted(audioMuted);
+  }, [audioMuted]);
+
+  useEffect(() => {
+    if (!isBattleStarted) {
+      audioRef.current.stopSoundtrack();
+    }
+  }, [isBattleStarted]);
+
+  useEffect(() => {
+    if (isBattleActive) {
+      setShowDestinations(false);
+    }
+  }, [isBattleActive]);
+
+  const selectTarget = useCallback(
+    (id: string) => {
+      if (destroyedPlanetIds.includes(id) || isBattleActive) {
+        return;
+      }
+      setSelectedId(id);
+      selectedIdRef.current = id;
+      setShowDestinations(false);
+      bridgeRef.current?.flyTo(id);
+    },
+    [destroyedPlanetIds, isBattleActive]
+  );
 
   const closeDock = useCallback(() => {
     setDockedService(null);
     bridgeRef.current?.releaseDock();
+  }, []);
+
+  const startBattleAudio = useCallback(() => {
+    audioRef.current.resume();
+    audioRef.current.setMuted(audioMuted);
+    audioRef.current.startSoundtrack(SOUNDTRACK_URLS);
+  }, [audioMuted]);
+
+  const startGame = useCallback(() => {
+    startBattleAudio();
+    gamePhaseRef.current = "Countdown";
+    setGamePhase("Countdown");
+  }, [startBattleAudio]);
+
+  const restartMatch = useCallback(() => {
+    startBattleAudio();
+    setInitialMatchPhase("Countdown");
+    setMatchId((value) => value + 1);
+  }, [startBattleAudio]);
+
+  const enterExploreMode = useCallback(() => {
+    audioRef.current.stopSoundtrack();
+    setInitialMatchPhase("Exploring");
+    setMatchId((value) => value + 1);
+  }, []);
+
+  const toggleAudioMuted = useCallback(() => {
+    setAudioMuted((current) => {
+      const next = !current;
+      audioRef.current.setMuted(next);
+      return next;
+    });
+  }, []);
+
+  const togglePause = useCallback(() => {
+    setGamePhase((phase) => {
+      if (phase === "Paused") {
+        const next = phaseBeforePauseRef.current === "Countdown" ? "Countdown" : "Running";
+        gamePhaseRef.current = next;
+        setCombatHud((previous) => ({
+          ...previous,
+          phase: next,
+          roundCountdown: next === "Countdown" ? previous.roundCountdown : null
+        }));
+        return next;
+      }
+      if (phase === "Running" || phase === "Countdown") {
+        phaseBeforePauseRef.current = phase;
+        gamePhaseRef.current = "Paused";
+        setCombatHud((previous) => ({
+          ...previous,
+          phase: "Paused",
+          roundCountdown: null
+        }));
+        return "Paused";
+      }
+      return phase;
+    });
   }, []);
 
   useEffect(() => {
@@ -444,9 +614,21 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
 
     let frameId = 0;
     let lastTelemetry = 0;
+    let lastCombatHud = 0;
     let lastPixelSample = 0;
     let lastNearbyKey = "";
+    let fireCooldown = 0;
+    let waveCooldown = 4;
+    let currentWave = 0;
+    let currentWaveTargetId = "";
+    let score = 0;
+    let runtimeShipHealth = PLAYER_MAX_HEALTH;
+    let shipDestroyed = false;
+    let shipHitFlash = 0;
     const keys = new Set<string>();
+    const enemies: EnemyRuntime[] = [];
+    const projectiles: ProjectileRuntime[] = [];
+    const explosions: ExplosionRuntime[] = [];
     const clock = new THREE.Clock();
     const velocity = new THREE.Vector3();
     const forward = new THREE.Vector3();
@@ -460,6 +642,16 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     const cameraOffset = new THREE.Vector3();
     const cameraDockTarget = new THREE.Vector3();
     const dockTangent = new THREE.Vector3();
+    const spawnTarget = new THREE.Vector3();
+    const enemyDirection = new THREE.Vector3();
+    const projectileDirection = new THREE.Vector3();
+    const projectilePosition = new THREE.Vector3();
+    const muzzleOffset = new THREE.Vector3();
+    const explosionPosition = new THREE.Vector3();
+    const enemySeparation = new THREE.Vector3();
+    const enemyLateral = new THREE.Vector3();
+    const enemyPlanetOffset = new THREE.Vector3();
+    const enemyPlanetTangent = new THREE.Vector3();
     const lookRig = new THREE.Object3D();
     const autopilotTarget = { id: selectedIdRef.current, active: false };
     const dockedTarget = {
@@ -486,6 +678,8 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.05;
+    renderer.domElement.tabIndex = 0;
+    renderer.domElement.setAttribute("aria-label", "Pirxey space flight viewport");
     mount.appendChild(renderer.domElement);
 
     const sampleCanvas = () => {
@@ -650,16 +844,198 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
         orbit,
         body,
         group,
+        destroyed: false,
+        health: 100,
+        maxHealth: 100,
         ring: dockRing,
         worldPosition: new THREE.Vector3()
       };
     });
 
     const ship = createShip();
+    attachShipCannons(ship);
+    const shipShieldMaterial = new THREE.MeshBasicMaterial({
+      color: 0x6fb5c8,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending
+    });
+    const shipShield = new THREE.Mesh(new THREE.SphereGeometry(1.62, 32, 16), shipShieldMaterial);
+    shipShield.name = "ship-hit-shield";
+    ship.add(shipShield);
+    const shipHitLight = new THREE.PointLight(0x6fb5c8, 0, 15);
+    ship.add(shipHitLight);
     scene.add(ship);
 
     const setMode = (mode: FlightMode) => {
       setTelemetry((previous) => (previous.mode === mode ? previous : { ...previous, mode }));
+    };
+
+    const isNavigationLocked = () => gamePhaseRef.current === "Running" || (gamePhaseRef.current === "Paused" && enemies.length > 0);
+
+    const transitionGamePhase = (phase: CombatHud["phase"]) => {
+      gamePhaseRef.current = phase;
+      setGamePhase(phase);
+    };
+
+    const activePlanets = () => planetRuntimes.filter((planet) => !planet.destroyed);
+
+    const syncPlanetHud = () => {
+      const nextHud = planetRuntimes.map((planet) => ({
+        destroyed: planet.destroyed,
+        health: Math.round((planet.health / planet.maxHealth) * 100),
+        id: planet.service.id,
+        name: planet.service.name
+      }));
+      setPlanetHud((previous) => {
+        const unchanged =
+          previous.length === nextHud.length &&
+          previous.every(
+            (item, index) =>
+              item.id === nextHud[index].id &&
+              item.health === nextHud[index].health &&
+              item.destroyed === nextHud[index].destroyed
+          );
+        return unchanged ? previous : nextHud;
+      });
+    };
+
+    const addExplosion = (position: THREE.Vector3, color = 0xd74721, particleCount = 18, scale = 1) => {
+      const explosion = createExplosion(position, color, particleCount, scale);
+      explosions.push(explosion);
+      scene.add(explosion.group);
+    };
+
+    const syncShipHealth = () => {
+      setShipHealth(Math.round(runtimeShipHealth));
+    };
+
+    const restoreShip = () => {
+      if (shipDestroyed) {
+        return;
+      }
+      runtimeShipHealth = PLAYER_MAX_HEALTH;
+      syncShipHealth();
+    };
+
+    const destroyShip = () => {
+      if (shipDestroyed) {
+        return;
+      }
+      shipDestroyed = true;
+      runtimeShipHealth = 0;
+      syncShipHealth();
+      ship.getWorldPosition(explosionPosition);
+      addExplosion(explosionPosition, 0x6fb5c8, 34, 1.15);
+      audioRef.current.planetExplosion();
+      if (document.pointerLockElement === renderer.domElement) {
+        document.exitPointerLock();
+      }
+      ship.visible = false;
+      dockedTarget.active = false;
+      autopilotTarget.active = false;
+      velocity.multiplyScalar(0);
+      setDockedService(null);
+      setMode("Manual");
+      transitionGamePhase("Game over");
+    };
+
+    const damageShip = (amount: number) => {
+      if (shipDestroyed || gamePhaseRef.current !== "Running") {
+        return;
+      }
+      runtimeShipHealth = clamp(runtimeShipHealth - amount, 0, PLAYER_MAX_HEALTH);
+      shipHitFlash = 0.34;
+      syncShipHealth();
+      if (runtimeShipHealth <= 0) {
+        destroyShip();
+      }
+    };
+
+    const findClosestActivePlanet = (position: THREE.Vector3) => {
+      let closest: PlanetRuntime | null = null;
+      let closestDistance = Number.POSITIVE_INFINITY;
+      for (const planet of planetRuntimes) {
+        if (planet.destroyed) {
+          continue;
+        }
+        planet.group.getWorldPosition(planet.worldPosition);
+        const distance = position.distanceTo(planet.worldPosition);
+        if (distance < closestDistance) {
+          closest = planet;
+          closestDistance = distance;
+        }
+      }
+      return closest;
+    };
+
+    const destroyPlanet = (planet: PlanetRuntime) => {
+      if (planet.destroyed) {
+        return;
+      }
+      planet.destroyed = true;
+      planet.health = 0;
+      planet.ring.material.opacity = 0;
+      planet.group.getWorldPosition(explosionPosition);
+      addExplosion(explosionPosition, 0xffcf65, 42, planet.service.size * 1.05);
+      audioRef.current.planetExplosion();
+      planet.group.visible = false;
+      setDestroyedPlanetIds((previous) => (previous.includes(planet.service.id) ? previous : [...previous, planet.service.id]));
+
+      if (dockedTarget.active && dockedTarget.id === planet.service.id) {
+        dockedTarget.active = false;
+        setDockedService(null);
+        setMode("Manual");
+      }
+
+      const replacement = activePlanets()[0];
+      if (selectedIdRef.current === planet.service.id && replacement) {
+        selectedIdRef.current = replacement.service.id;
+        setSelectedId(replacement.service.id);
+      }
+
+      for (const enemy of enemies) {
+        if (enemy.targetPlanetId !== planet.service.id) {
+          continue;
+        }
+        if (replacement) {
+          enemy.targetPlanetId = replacement.service.id;
+        } else {
+          enemy.state = "aggro";
+        }
+      }
+
+      syncPlanetHud();
+      if (!replacement) {
+        if (document.pointerLockElement === renderer.domElement) {
+          document.exitPointerLock();
+        }
+        transitionGamePhase("Game over");
+      }
+    };
+
+    const damagePlanet = (planet: PlanetRuntime, amount: number) => {
+      if (planet.destroyed) {
+        return;
+      }
+      planet.health = clamp(planet.health - amount, 0, planet.maxHealth);
+      if (planet.health <= 0) {
+        destroyPlanet(planet);
+      }
+    };
+
+    const restoreActivePlanets = () => {
+      for (const planet of planetRuntimes) {
+        if (planet.destroyed) {
+          planet.group.visible = false;
+          planet.health = 0;
+          continue;
+        }
+        planet.health = planet.maxHealth;
+        planet.group.visible = true;
+      }
+      syncPlanetHud();
     };
 
     const aimShipAt = (point: THREE.Vector3, amount: number) => {
@@ -670,9 +1046,168 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       ship.quaternion.slerp(lookRig.quaternion, amount);
     };
 
+    const removeProjectile = (projectile: ProjectileRuntime) => {
+      scene.remove(projectile.mesh);
+      disposeObject(projectile.mesh);
+      const index = projectiles.indexOf(projectile);
+      if (index >= 0) {
+        projectiles.splice(index, 1);
+      }
+    };
+
+    const removeEnemy = (enemy: EnemyRuntime) => {
+      enemy.group.getWorldPosition(explosionPosition);
+      addExplosion(explosionPosition, 0xd74721, 18, 0.82);
+      audioRef.current.explosion();
+      scene.remove(enemy.group);
+      disposeObject(enemy.group);
+      const index = enemies.indexOf(enemy);
+      if (index >= 0) {
+        enemies.splice(index, 1);
+      }
+    };
+
+    const aggroPlanetGroup = (planetId: string, origin: THREE.Vector3, sourceEnemyId: number) => {
+      const candidates = enemies
+        .filter((enemy) => enemy.targetPlanetId === planetId && enemy.id !== sourceEnemyId && enemy.state === "raiding")
+        .map((enemy) => ({
+          distance: enemy.group.position.distanceTo(origin),
+          enemy
+        }))
+        .sort((a, b) => a.distance - b.distance);
+      const nearbyPool = candidates.slice(0, Math.min(candidates.length, 4 + Math.floor(Math.random() * 5)));
+      const maxAggro = Math.min(nearbyPool.length, 2 + Math.floor(currentWave / 4), 6);
+      const aggroCount = maxAggro > 0 ? 1 + Math.floor(Math.random() * maxAggro) : 0;
+      const selectable = [...nearbyPool];
+      const selected: EnemyRuntime[] = [];
+
+      while (selected.length < aggroCount && selectable.length > 0) {
+        const index = Math.floor(Math.random() * selectable.length);
+        const [candidate] = selectable.splice(index, 1);
+        if (candidate) {
+          selected.push(candidate.enemy);
+        }
+      }
+
+      for (const enemy of selected) {
+        enemy.state = "aggro";
+        enemy.attackCooldown = Math.min(enemy.attackCooldown, 0.55 + Math.random() * 0.75);
+      }
+    };
+
+    const firePlayerShot = () => {
+      if (
+        fireCooldown > 0 ||
+        dockedTarget.active ||
+        gamePhaseRef.current === "Paused" ||
+        gamePhaseRef.current === "Awaiting" ||
+        gamePhaseRef.current === "Game over"
+      ) {
+        return;
+      }
+      forward.set(0, 0, -1).applyQuaternion(ship.quaternion).normalize();
+      muzzleOffset.set(0, -0.02, -2.25).applyQuaternion(ship.quaternion);
+      projectilePosition.copy(ship.position).add(muzzleOffset);
+      const projectile = createPlayerBolt(projectilePosition, forward);
+      projectiles.push(projectile);
+      scene.add(projectile.mesh);
+      fireCooldown = 0.18;
+      audioRef.current.shoot();
+    };
+
+    const spawnEnemyShot = (enemy: EnemyRuntime, target: THREE.Vector3) => {
+      projectileDirection.copy(target).sub(enemy.group.position).normalize();
+      projectilePosition.copy(enemy.group.position).addScaledVector(projectileDirection, 0.9);
+      const shot = createEnemyShot(projectilePosition, projectileDirection, currentWave);
+      projectiles.push(shot);
+      scene.add(shot.mesh);
+    };
+
+    const resolveEnemyPlanetAvoidance = (enemy: EnemyRuntime, primaryTarget: PlanetRuntime, frameDelta: number) => {
+      for (const planet of planetRuntimes) {
+        if (planet.destroyed) {
+          continue;
+        }
+
+        planet.group.getWorldPosition(planet.worldPosition);
+        enemyPlanetOffset.copy(enemy.group.position).sub(planet.worldPosition);
+        let distance = enemyPlanetOffset.length();
+        const bodyClearance = planet.service.size + 1.18;
+        const steeringRadius = planet.service.size + (planet.service.id === primaryTarget.service.id ? 3.35 : 4.25);
+
+        if (distance < 0.001) {
+          enemyPlanetOffset.set(1, 0.15, 0).normalize();
+          distance = 0.001;
+        } else {
+          enemyPlanetOffset.divideScalar(distance);
+        }
+
+        if (distance < bodyClearance) {
+          enemy.group.position.copy(planet.worldPosition).addScaledVector(enemyPlanetOffset, bodyClearance);
+          distance = bodyClearance;
+        }
+
+        if (distance >= steeringRadius || enemyDirection.dot(enemyPlanetOffset) >= 0) {
+          continue;
+        }
+
+        const influence = clamp((steeringRadius - distance) / Math.max(0.001, steeringRadius - bodyClearance), 0, 1);
+        enemyPlanetTangent.set(-enemyPlanetOffset.z, 0, enemyPlanetOffset.x);
+        if (enemyPlanetTangent.lengthSq() < 0.001) {
+          enemyPlanetTangent.set(1, 0, 0);
+        } else {
+          enemyPlanetTangent.normalize();
+        }
+        const orbitSide = Math.sin(enemy.id * 7.31 + planet.service.phase * 11.7) >= 0 ? 1 : -1;
+        enemy.group.position.addScaledVector(enemyPlanetTangent, orbitSide * influence * enemy.speed * frameDelta * 1.05);
+        enemy.group.position.addScaledVector(enemyPlanetOffset, influence * enemy.speed * frameDelta * 0.36);
+      }
+    };
+
+    const spawnNextWave = () => {
+      currentWave += 1;
+      const config = getWaveConfig(currentWave);
+      const availablePlanets = activePlanets();
+      if (availablePlanets.length === 0) {
+        transitionGamePhase("Game over");
+        return;
+      }
+
+      restoreActivePlanets();
+      restoreShip();
+      const groupCount = Math.min(config.groups, availablePlanets.length);
+      const targetPlanets = Array.from(
+        { length: groupCount },
+        (_, groupIndex) => availablePlanets[(currentWave + groupIndex - 1) % availablePlanets.length]
+      );
+      currentWaveTargetId = targetPlanets[0]?.service.id ?? "";
+      const baseCount = Math.floor(config.count / groupCount);
+      let remainder = config.count % groupCount;
+
+      for (let groupIndex = 0; groupIndex < targetPlanets.length; groupIndex += 1) {
+        const targetRuntime = targetPlanets[groupIndex];
+        targetRuntime.group.getWorldPosition(spawnTarget);
+        const enemiesInGroup = baseCount + (remainder > 0 ? 1 : 0);
+        remainder = Math.max(0, remainder - 1);
+        for (let i = 0; i < enemiesInGroup; i += 1) {
+          const enemy = createEnemyBug(
+            createSpawnPosition(spawnTarget, currentWave + groupIndex * 3, i, enemiesInGroup),
+            targetRuntime.service.id,
+            config
+          );
+          enemies.push(enemy);
+          scene.add(enemy.group);
+        }
+      }
+    };
+
     const dockCurrent = () => {
+      if (isNavigationLocked()) {
+        return;
+      }
       ship.getWorldPosition(shipWorld);
       const candidate = planetRuntimes
+        .filter((planet) => !planet.destroyed)
         .map((planet) => {
           planet.group.getWorldPosition(planet.worldPosition);
           return {
@@ -683,6 +1218,9 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
         .sort((a, b) => a.distance - b.distance)[0];
 
       if (candidate && candidate.distance < 4.8) {
+        if (document.pointerLockElement === renderer.domElement) {
+          document.exitPointerLock();
+        }
         autopilotTarget.active = false;
         candidate.planet.group.getWorldPosition(candidate.planet.worldPosition);
         const relative = ship.position.clone().sub(candidate.planet.worldPosition);
@@ -700,6 +1238,12 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
 
     bridgeRef.current = {
       flyTo: (id: string) => {
+        if (isNavigationLocked()) {
+          return;
+        }
+        if (!planetRuntimes.some((planet) => planet.service.id === id && !planet.destroyed)) {
+          return;
+        }
         dockedTarget.active = false;
         autopilotTarget.id = id;
         autopilotTarget.active = true;
@@ -710,7 +1254,8 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
         dockedTarget.active = false;
         autopilotTarget.active = false;
         setMode("Manual");
-      }
+      },
+      toggleCameraMode: () => togglePointerLock()
     };
 
     const onKeyDown = (event: KeyboardEvent) => {
@@ -721,7 +1266,17 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       if (event.code === "KeyE") {
         dockCurrent();
       }
+      if (event.code === "KeyF") {
+        firePlayerShot();
+      }
+      if (event.code === "KeyV") {
+        event.preventDefault();
+        togglePointerLock();
+      }
       if (event.code === "Escape") {
+        if (document.pointerLockElement === renderer.domElement) {
+          document.exitPointerLock();
+        }
         dockedTarget.active = false;
         autopilotTarget.active = false;
         setMode("Manual");
@@ -736,11 +1291,38 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     let dragging = false;
     let lastX = 0;
     let lastY = 0;
+    let pointerLocked = false;
 
-    const onPointerDown = (event: PointerEvent) => {
-      if (dockedTarget.active) {
+    const applyLookInput = (dx: number, dy: number, multiplier = 1) => {
+      ship.rotation.y -= dx * 0.004 * multiplier;
+      ship.rotation.x = clamp(ship.rotation.x - dy * 0.0032 * multiplier, -0.92, 0.92);
+      autopilotTarget.active = false;
+      setMode("Manual");
+    };
+
+    const syncPointerLockMode = () => {
+      pointerLocked = document.pointerLockElement === renderer.domElement;
+      setCameraMode(pointerLocked ? "Mouse aim" : "Drag aim");
+      renderer.domElement.classList.toggle("is-pointer-locked", pointerLocked);
+    };
+
+    const togglePointerLock = () => {
+      if (gamePhaseRef.current === "Game over" || shipDestroyed || dockedTarget.active) {
         return;
       }
+      if (document.pointerLockElement === renderer.domElement) {
+        document.exitPointerLock();
+        return;
+      }
+      renderer.domElement.focus({ preventScroll: true });
+      void renderer.domElement.requestPointerLock();
+    };
+
+    const onPointerDown = (event: PointerEvent) => {
+      if (pointerLocked || gamePhaseRef.current === "Game over" || shipDestroyed || dockedTarget.active) {
+        return;
+      }
+      renderer.domElement.focus({ preventScroll: true });
       dragging = true;
       lastX = event.clientX;
       lastY = event.clientY;
@@ -748,10 +1330,17 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     };
 
     const onPointerMove = (event: PointerEvent) => {
+      if (pointerLocked) {
+        if (gamePhaseRef.current === "Game over" || shipDestroyed || dockedTarget.active) {
+          return;
+        }
+        applyLookInput(event.movementX, event.movementY, 0.82);
+        return;
+      }
       if (!dragging) {
         return;
       }
-      if (dockedTarget.active) {
+      if (gamePhaseRef.current === "Game over" || shipDestroyed || dockedTarget.active) {
         dragging = false;
         return;
       }
@@ -759,10 +1348,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       const dy = event.clientY - lastY;
       lastX = event.clientX;
       lastY = event.clientY;
-      ship.rotation.y -= dx * 0.004;
-      ship.rotation.x = clamp(ship.rotation.x - dy * 0.0032, -0.92, 0.92);
-      autopilotTarget.active = false;
-      setMode("Manual");
+      applyLookInput(dx, dy);
     };
 
     const onPointerUp = (event: PointerEvent) => {
@@ -778,6 +1364,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     renderer.domElement.addEventListener("pointermove", onPointerMove);
     renderer.domElement.addEventListener("pointerup", onPointerUp);
     renderer.domElement.addEventListener("pointerleave", onPointerUp);
+    document.addEventListener("pointerlockchange", syncPointerLockMode);
 
     const resizeObserver = new ResizeObserver(() => {
       const width = mount.clientWidth;
@@ -793,12 +1380,34 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       const delta = Math.min(clock.getDelta(), 0.04);
       const elapsed = clock.elapsedTime;
       frameId = window.requestAnimationFrame(animate);
+      const phase = gamePhaseRef.current;
+
+      if (phase === "Paused") {
+        const previousStats = renderer.domElement.dataset.gameStats
+          ? JSON.parse(renderer.domElement.dataset.gameStats)
+          : {};
+        renderer.domElement.dataset.gameStats = JSON.stringify({
+          ...previousStats,
+          phase: "Paused",
+          roundCountdown: null,
+          shipHealth: Math.round(runtimeShipHealth)
+        });
+        renderer.render(scene, camera);
+        labelRenderer.render(scene, camera);
+        return;
+      }
 
       sun.rotation.y += delta * 0.045;
       corona.material.rotation = elapsed * 0.03;
       starFieldA.rotation.y += delta * 0.0025;
       starFieldB.rotation.y -= delta * 0.003;
       dust.rotation.y += delta * 0.004;
+      fireCooldown = Math.max(0, fireCooldown - delta);
+      shipHitFlash = Math.max(0, shipHitFlash - delta);
+      const shipFlashRatio = clamp(shipHitFlash / 0.34, 0, 1);
+      shipShieldMaterial.opacity = shipFlashRatio * 0.36;
+      shipHitLight.intensity = shipFlashRatio * 3.2;
+      shipShield.scale.setScalar(1 + shipFlashRatio * 0.18);
 
       for (const runtime of planetRuntimes) {
         runtime.orbit.rotation.y += runtime.service.orbitSpeed * delta;
@@ -808,9 +1417,104 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
 
       ship.getWorldPosition(shipWorld);
       const selectedRuntime =
-        planetRuntimes.find((planet) => planet.service.id === selectedIdRef.current) ?? planetRuntimes[0];
+        planetRuntimes.find((planet) => planet.service.id === selectedIdRef.current && !planet.destroyed) ??
+        activePlanets()[0] ??
+        planetRuntimes[0];
       selectedRuntime.group.getWorldPosition(targetWorld);
       const distanceToSelected = shipWorld.distanceTo(targetWorld) - selectedRuntime.service.size;
+
+      if (phase === "Countdown") {
+        waveCooldown -= delta;
+        if (waveCooldown <= 0) {
+          spawnNextWave();
+          if (activePlanets().length > 0) {
+            transitionGamePhase("Running");
+          }
+        }
+      } else if (phase === "Running" && enemies.length === 0) {
+        waveCooldown = 5;
+        transitionGamePhase("Countdown");
+      }
+
+      for (let i = explosions.length - 1; i >= 0; i -= 1) {
+        const explosion = explosions[i];
+        explosion.life -= delta;
+        const fade = clamp(explosion.life / explosion.maxLife, 0, 1);
+        for (let childIndex = 0; childIndex < explosion.group.children.length; childIndex += 1) {
+          const child = explosion.group.children[childIndex];
+          if (child instanceof THREE.Sprite) {
+            child.position.addScaledVector(explosion.velocity[childIndex], delta);
+            child.material.opacity = fade * 0.9;
+            const pulse = 1 + delta * (2.2 - fade);
+            child.scale.multiplyScalar(pulse);
+          } else if (child instanceof THREE.PointLight) {
+            child.intensity = 2.2 * fade;
+          }
+        }
+        if (explosion.life <= 0) {
+          scene.remove(explosion.group);
+          disposeObject(explosion.group);
+          explosions.splice(i, 1);
+        }
+      }
+
+      if (phase === "Running") {
+        for (const enemy of enemies) {
+          let targetRuntime =
+            planetRuntimes.find((planet) => planet.service.id === enemy.targetPlanetId && !planet.destroyed) ??
+            findClosestActivePlanet(enemy.group.position);
+          if (targetRuntime) {
+            enemy.targetPlanetId = targetRuntime.service.id;
+            targetRuntime.group.getWorldPosition(targetRuntime.worldPosition);
+          } else {
+            targetRuntime = selectedRuntime;
+            enemy.state = "aggro";
+          }
+          const combatTarget = enemy.state === "aggro" ? ship.position : targetRuntime.worldPosition;
+          enemyDirection.copy(combatTarget).sub(enemy.group.position);
+          const targetDistance = enemyDirection.length();
+          if (targetDistance > 0.001) {
+            enemyDirection.divideScalar(targetDistance);
+          }
+
+          const desiredDistance = enemy.state === "aggro" ? 8.5 : targetRuntime.service.size + 2.8;
+          if (targetDistance > desiredDistance) {
+            enemy.group.position.addScaledVector(enemyDirection, enemy.speed * delta);
+          } else if (enemy.state === "raiding") {
+            damagePlanet(targetRuntime, delta * 1.2);
+            enemy.group.position.addScaledVector(enemyDirection, Math.sin(elapsed * 2 + enemy.id) * delta * 0.35);
+          } else {
+            enemyLateral.set(-enemyDirection.z, 0, enemyDirection.x).normalize();
+            enemy.group.position.addScaledVector(enemyLateral, Math.sin(elapsed + enemy.id) * delta * 1.1);
+          }
+
+          for (const other of enemies) {
+            if (other.id === enemy.id) {
+              continue;
+            }
+            enemySeparation.copy(enemy.group.position).sub(other.group.position);
+            const separationDistance = enemySeparation.length();
+            const minimumSeparation = enemy.state === "aggro" || other.state === "aggro" ? 2.15 : 1.65;
+            if (separationDistance > 0.001 && separationDistance < minimumSeparation) {
+              enemy.group.position.addScaledVector(
+                enemySeparation.divideScalar(separationDistance),
+                (minimumSeparation - separationDistance) * delta * 2.8
+              );
+            }
+          }
+
+          enemy.group.position.y += Math.sin(elapsed * 2.2 + enemy.id) * delta * 0.18;
+          resolveEnemyPlanetAvoidance(enemy, targetRuntime, delta);
+          enemy.group.lookAt(combatTarget);
+          enemy.group.rotateY(Math.PI);
+          enemy.attackCooldown -= delta;
+          if (enemy.attackCooldown <= 0) {
+            const shotTarget = enemy.state === "aggro" ? ship.position : targetRuntime.worldPosition;
+            spawnEnemyShot(enemy, shotTarget);
+            enemy.attackCooldown = getWaveConfig(currentWave).attackCooldown + (enemy.id % 5) * 0.22;
+          }
+        }
+      }
 
       if (dockedTarget.active) {
         const dockRuntime =
@@ -831,7 +1535,12 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
         aimShipAt(shipAim, 1 - Math.pow(0.002, delta));
       } else if (autopilotTarget.active) {
         const targetRuntime =
-          planetRuntimes.find((planet) => planet.service.id === autopilotTarget.id) ?? selectedRuntime;
+          planetRuntimes.find((planet) => planet.service.id === autopilotTarget.id && !planet.destroyed) ??
+          activePlanets()[0];
+        if (!targetRuntime) {
+          autopilotTarget.active = false;
+          setMode("Manual");
+        } else {
         targetRuntime.group.getWorldPosition(targetWorld);
         const awayFromSun = targetWorld.clone().normalize();
         desired.copy(targetWorld).addScaledVector(awayFromSun, targetRuntime.service.size + 3.4);
@@ -849,6 +1558,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
           autopilotTarget.active = false;
           velocity.multiplyScalar(0.25);
           setMode("Manual");
+        }
         }
       } else {
         const yaw = (keys.has("KeyA") ? 1 : 0) - (keys.has("KeyD") ? 1 : 0);
@@ -882,6 +1592,9 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
 
       if (!dockedTarget.active) {
         for (const runtime of planetRuntimes) {
+          if (runtime.destroyed) {
+            continue;
+          }
           runtime.group.getWorldPosition(runtime.worldPosition);
           avoidanceNormal.copy(ship.position).sub(runtime.worldPosition);
           const distance = avoidanceNormal.length();
@@ -918,9 +1631,64 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
         }
       }
 
+      if (phase !== "Game over") {
+        for (let i = projectiles.length - 1; i >= 0; i -= 1) {
+          const projectile = projectiles[i];
+          projectile.mesh.position.addScaledVector(projectile.velocity, delta);
+          projectile.life -= delta;
+
+          if (projectile.owner === "player") {
+            for (let enemyIndex = enemies.length - 1; enemyIndex >= 0; enemyIndex -= 1) {
+              const enemy = enemies[enemyIndex];
+              const hitDistance = projectile.mesh.position.distanceTo(enemy.group.position);
+              if (hitDistance < projectile.radius + 0.75) {
+                enemy.hp -= projectile.damage;
+                enemy.state = "aggro";
+                aggroPlanetGroup(enemy.targetPlanetId, enemy.group.position, enemy.id);
+                removeProjectile(projectile);
+                if (enemy.hp <= 0) {
+                  score += 10 + currentWave;
+                  removeEnemy(enemy);
+                }
+                break;
+              }
+            }
+          } else {
+            if (!dockedTarget.active && projectile.mesh.position.distanceTo(ship.position) < projectile.radius + 1.0) {
+              damageShip(12 + Math.min(currentWave, 10) * 1.4);
+              if (!shipDestroyed) {
+                velocity.addScaledVector(projectile.velocity.clone().normalize(), 3.4);
+              }
+              removeProjectile(projectile);
+              continue;
+            }
+
+            for (const runtime of planetRuntimes) {
+              if (runtime.destroyed) {
+                continue;
+              }
+              runtime.group.getWorldPosition(runtime.worldPosition);
+              if (projectile.mesh.position.distanceTo(runtime.worldPosition) < runtime.service.size + projectile.radius) {
+                damagePlanet(runtime, projectile.damage * 4);
+                removeProjectile(projectile);
+                break;
+              }
+            }
+          }
+
+          if (projectiles.includes(projectile) && projectile.life <= 0) {
+            removeProjectile(projectile);
+          }
+        }
+      }
+
       let nearestRuntime: PlanetRuntime | null = null;
       let nearestDistance = Number.POSITIVE_INFINITY;
       for (const runtime of planetRuntimes) {
+        if (runtime.destroyed) {
+          runtime.ring.material.opacity = 0;
+          continue;
+        }
         runtime.group.getWorldPosition(runtime.worldPosition);
         const distance = ship.position.distanceTo(runtime.worldPosition) - runtime.service.size;
         const isSelected = runtime.service.id === selectedIdRef.current;
@@ -944,11 +1712,14 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
             canDock
           });
         }
+      } else if (lastNearbyKey !== "none") {
+        lastNearbyKey = "none";
+        setNearby(null);
       }
 
       if (dockedTarget.active) {
         const dockRuntime =
-          planetRuntimes.find((planet) => planet.service.id === dockedTarget.id) ?? selectedRuntime;
+          planetRuntimes.find((planet) => planet.service.id === dockedTarget.id && !planet.destroyed) ?? selectedRuntime;
         dockRuntime.group.getWorldPosition(targetWorld);
         const cameraAngle = dockedTarget.angle - 0.68;
         const cameraRadius = dockedTarget.radius + dockRuntime.service.size + 7.5;
@@ -980,6 +1751,63 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
         });
       }
 
+      if (elapsed - lastCombatHud > 0.2) {
+        lastCombatHud = elapsed;
+        const targetRuntime =
+          planetRuntimes.find((planet) => planet.service.id === currentWaveTargetId && !planet.destroyed) ??
+          activePlanets()[0] ??
+          selectedRuntime;
+        const threatNames = Array.from(
+          new Set(
+            enemies
+              .map((enemy) => planetRuntimes.find((planet) => planet.service.id === enemy.targetPlanetId && !planet.destroyed))
+              .filter((planet): planet is PlanetRuntime => Boolean(planet))
+              .map((planet) => planet.service.name)
+          )
+        );
+        const threat =
+          gamePhaseRef.current === "Awaiting"
+            ? "Awaiting signal"
+            : gamePhaseRef.current === "Countdown"
+              ? "Next round"
+              : gamePhaseRef.current === "Game over"
+                ? "All planets lost"
+                : threatNames.length > 0
+                  ? threatNames.join(" / ")
+                  : "Sector clear";
+        const planetHealth = targetRuntime.destroyed
+          ? 0
+          : Math.round((targetRuntime.health / targetRuntime.maxHealth) * 100);
+        const roundCountdown =
+          gamePhaseRef.current === "Countdown" ? Math.max(0, Math.ceil(waveCooldown)) : null;
+        syncPlanetHud();
+        setCombatHud({
+          enemies: enemies.length,
+          phase: gamePhaseRef.current,
+          planetHealth,
+          roundCountdown,
+          score,
+          threat,
+          wave: currentWave
+        });
+        renderer.domElement.dataset.gameStats = JSON.stringify({
+          enemies: enemies.length,
+          phase: gamePhaseRef.current,
+          planetHealth,
+          planets: planetRuntimes.map((planet) => ({
+            destroyed: planet.destroyed,
+            health: Math.round((planet.health / planet.maxHealth) * 100),
+            id: planet.service.id
+          })),
+          projectiles: projectiles.length,
+          roundCountdown,
+          score,
+          shipHealth: Math.round(runtimeShipHealth),
+          threat,
+          wave: currentWave
+        });
+      }
+
       renderer.render(scene, camera);
       labelRenderer.render(scene, camera);
 
@@ -996,6 +1824,10 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       resizeObserver.disconnect();
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
+      document.removeEventListener("pointerlockchange", syncPointerLockMode);
+      if (document.pointerLockElement === renderer.domElement) {
+        document.exitPointerLock();
+      }
       renderer.domElement.removeEventListener("pointerdown", onPointerDown);
       renderer.domElement.removeEventListener("pointermove", onPointerMove);
       renderer.domElement.removeEventListener("pointerup", onPointerUp);
@@ -1019,17 +1851,111 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
         }
       });
     };
-  }, [services]);
+  }, [initialMatchPhase, matchId, services]);
 
   return (
     <main className={`relative h-screen w-screen overflow-hidden bg-void text-parchment ${dockedService ? "is-docked" : ""}`}>
-      <div ref={mountRef} className="absolute inset-0 cursor-grab active:cursor-grabbing" />
+      <div
+        ref={mountRef}
+        className={`absolute inset-0 ${
+          cameraMode === "Mouse aim" ? "cursor-none" : "cursor-grab active:cursor-grabbing"
+        }`}
+      />
+
+      {!dockedService ? <div className="game-crosshair" aria-hidden="true" /> : null}
+
+      {gamePhase === "Countdown" ? (
+        <div className="round-banner" aria-live="polite">
+          <span>Next round</span>
+          <strong>{combatHud.roundCountdown ?? 0}</strong>
+        </div>
+      ) : null}
+
+      {gamePhase === "Paused" ? (
+        <div className="round-banner is-paused" aria-live="polite">
+          <span>Simulation</span>
+          <strong>Paused</strong>
+        </div>
+      ) : null}
+
+      {gamePhase === "Game over" ? (
+        <div className="round-banner is-danger" aria-live="polite">
+          <span>Defense failed</span>
+          <strong>Game over</strong>
+          <div className="round-actions">
+            <button type="button" onClick={restartMatch}>
+              <RotateCcw className="h-4 w-4" />
+              Restart
+            </button>
+            <button type="button" onClick={enterExploreMode}>
+              <Telescope className="h-4 w-4" />
+              Explore
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {gamePhase === "Awaiting" ? (
+        <section className="invasion-toast" aria-label="Alien invasion alert">
+          <p>Alien lifeforms are beginning their invasion. Will you help defend the Pirxey planets?</p>
+          <button type="button" onClick={startGame}>
+            Yes, launch
+          </button>
+        </section>
+      ) : null}
+
+      {showPlanetRoster ? (
+        <div className="pointer-events-none planet-roster" aria-hidden="true">
+          {planetHud.map((planet) => (
+            <div key={planet.id} className={`planet-status ${planet.destroyed ? "is-destroyed" : ""}`}>
+              <span>{planet.name}</span>
+              <strong>{planet.destroyed ? "Lost" : `${planet.health}%`}</strong>
+              <i>
+                <b style={{ width: `${planet.destroyed ? 0 : planet.health}%` }} />
+              </i>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {showCombatHud ? (
+        <div className="pointer-events-none combat-hud" aria-hidden="true">
+          <div className="combat-card">
+            <span>Wave</span>
+            <strong>{combatHud.wave}</strong>
+          </div>
+          <div className="combat-card">
+            <span>Hostiles</span>
+            <strong>{combatHud.enemies}</strong>
+          </div>
+          <div className="combat-card combat-card-wide">
+            <span>Ship HP</span>
+            <div className="ship-health">
+              <i style={{ width: `${shipHealth}%` }} />
+            </div>
+          </div>
+          <div className="combat-card combat-card-wide">
+            <span>Defend {combatHud.threat}</span>
+            <div className="planet-health">
+              <i style={{ width: `${combatHud.planetHealth}%` }} />
+            </div>
+          </div>
+          <div className="combat-card">
+            <span>Score</span>
+            <strong>{combatHud.score}</strong>
+          </div>
+          <div className="combat-card">
+            <span>State</span>
+            <strong>{gamePhase}</strong>
+          </div>
+        </div>
+      ) : null}
 
       <div className="pointer-events-none absolute inset-0 z-10 flex flex-col justify-between p-4 sm:p-6">
         <header className="flex items-start justify-between gap-4">
           <div className="pointer-events-auto top-shell flex items-center gap-4">
-            <div className="pirxey-mark" aria-label="Pirxey">
-              Pirxey<span>x</span>
+            <div className="pirxey-mark">
+              <img src="/pirxey-logo.svg" alt="Pirxey" className="pirxey-logo" />
             </div>
             <div className="hidden min-w-0 border-l border-parchment/20 pl-4 md:block">
               <p className="font-display text-xs uppercase text-parchment/55">AI-native mission map</p>
@@ -1058,19 +1984,45 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
               <Gauge className="h-4 w-4" />
               Controls
             </button>
-            <button
-              className={`toolbar-button ${showDestinations ? "is-active" : ""}`}
-              type="button"
-              aria-expanded={showDestinations}
-              onClick={() => setShowDestinations((value) => !value)}
-            >
-              <ListChecks className="h-4 w-4" />
-              Destinations
-            </button>
-            <button className="toolbar-button autopilot-cta" type="button" onClick={() => selectTarget(selectedService.id)}>
-              <Navigation className="h-4 w-4" />
-              Autopilot
-            </button>
+            {canUseNavigation ? (
+              <>
+                <button
+                  className={`toolbar-button ${showDestinations ? "is-active" : ""}`}
+                  type="button"
+                  aria-expanded={showDestinations}
+                  onClick={() => setShowDestinations((value) => !value)}
+                >
+                  <ListChecks className="h-4 w-4" />
+                  Destinations
+                </button>
+                <button className="toolbar-button autopilot-cta" type="button" onClick={() => selectTarget(selectedService.id)}>
+                  <Navigation className="h-4 w-4" />
+                  Autopilot
+                </button>
+              </>
+            ) : null}
+            {gamePhase === "Running" || gamePhase === "Countdown" || gamePhase === "Paused" ? (
+              <button
+                className={`toolbar-button ${gamePhase === "Paused" ? "is-active" : ""}`}
+                type="button"
+                onClick={togglePause}
+              >
+                {gamePhase === "Paused" ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
+                {gamePhase === "Paused" ? "Resume" : "Pause"}
+              </button>
+            ) : null}
+            {isBattleStarted ? (
+              <button
+                className={`toolbar-button audio-toggle ${audioMuted ? "is-muted" : ""}`}
+                type="button"
+                aria-label={audioMuted ? "Unmute battle audio" : "Mute battle audio"}
+                title={audioMuted ? "Unmute battle audio" : "Mute battle audio"}
+                onClick={toggleAudioMuted}
+              >
+                {audioMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+                <span className="sr-only">{audioMuted ? "Unmute audio" : "Mute audio"}</span>
+              </button>
+            ) : null}
           </div>
         ) : null}
 
@@ -1085,18 +2037,33 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
               <ControlHint icon={<Gauge />} label="S" value="brake" />
               <ControlHint icon={<Compass />} label="A / D" value="yaw" />
               <ControlHint icon={<MousePointer2 />} label="Drag" value="look around" />
+              <ControlHint icon={<MousePointer2 />} label="V" value="toggle camera" />
               <ControlHint icon={<Target />} label="E" value="dock nearby" />
+              <ControlHint icon={<Crosshair />} label="F" value="fire cannons" />
               <ControlHint icon={<Navigation />} label="Space / C" value="vertical" />
+            </div>
+            <div className="camera-mode-note">
+              <span>
+                <MousePointer2 className="h-4 w-4" />
+                Press V to toggle camera mode
+              </span>
+              <button type="button" onClick={() => bridgeRef.current?.toggleCameraMode()}>
+                {cameraMode === "Mouse aim" ? "Drag aim" : "Mouse aim"}
+              </button>
             </div>
             <div className="mt-4 grid grid-cols-3 gap-2 border-t border-parchment/10 pt-4">
               <Metric label="speed" value={`${telemetry.speed.toFixed(1)}`} />
               <Metric label="target" value={formatDistance(telemetry.distance)} />
-              <Metric label="dock" value={nearby?.canDock ? "ready" : "scan"} tone={nearby?.canDock ? "hot" : "cool"} />
+              <Metric
+                label="dock"
+                value={isBattleActive ? "locked" : nearby?.canDock ? "ready" : "scan"}
+                tone={!isBattleActive && nearby?.canDock ? "hot" : "cool"}
+              />
             </div>
           </div>
 
           <div className="pointer-events-none order-1 flex min-h-[170px] items-end justify-center lg:order-2">
-            {nearby?.canDock && !dockedService ? (
+            {canUseNavigation && nearby?.canDock && !dockedService ? (
               <button
                 className="pointer-events-auto dock-button"
                 type="button"
@@ -1117,7 +2084,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
             )}
           </div>
 
-          <aside className={`pointer-events-auto service-panel order-3 self-end ${dockedService || !showDestinations ? "is-stowed" : ""}`}>
+          <aside className={`pointer-events-auto service-panel order-3 self-end ${dockedService || !showDestinations || !canUseNavigation ? "is-stowed" : ""}`}>
             <div className="mb-3 flex items-center justify-between gap-3">
               <div>
                 <p className="font-display text-xs uppercase text-orbit">Service planets</p>
@@ -1127,21 +2094,27 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
             </div>
 
             <div className="service-list">
-              {services.map((service, index) => (
-                <button
-                  key={service.id}
-                  className={`service-target ${selectedId === service.id ? "is-active" : ""}`}
-                  type="button"
-                  onClick={() => selectTarget(service.id)}
-                >
-                  <span className="service-index">{String(index + 1).padStart(2, "0")}</span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate font-display text-sm">{service.name}</span>
-                    <span className="block truncate font-body text-xs text-parchment/55">{service.eyebrow}</span>
-                  </span>
-                  <span className="service-dot" />
-                </button>
-              ))}
+              {services.map((service, index) => {
+                const isDestroyed = destroyedPlanetIds.includes(service.id);
+                return (
+                  <button
+                    key={service.id}
+                    className={`service-target ${selectedId === service.id ? "is-active" : ""} ${isDestroyed ? "is-destroyed" : ""}`}
+                    type="button"
+                    disabled={isDestroyed}
+                    onClick={() => selectTarget(service.id)}
+                  >
+                    <span className="service-index">{String(index + 1).padStart(2, "0")}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-display text-sm">{service.name}</span>
+                      <span className="block truncate font-body text-xs text-parchment/55">
+                        {isDestroyed ? "Planet lost" : service.eyebrow}
+                      </span>
+                    </span>
+                    <span className="service-dot" />
+                  </button>
+                );
+              })}
             </div>
           </aside>
         </section>
