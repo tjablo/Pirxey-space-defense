@@ -136,11 +136,92 @@ canvas {
 
 .hud-panel {
   max-width: 360px;
+  transition:
+    opacity 220ms ease,
+    transform 220ms ease;
+}
+
+.hud-panel.is-hidden {
+  display: none;
 }
 
 .service-panel {
   max-height: min(620px, calc(100vh - 140px));
   overflow: hidden;
+  transition:
+    opacity 220ms ease,
+    transform 220ms ease;
+}
+
+.is-docked .hud-panel {
+  pointer-events: none;
+  opacity: 0;
+  transform: translateX(-18px);
+}
+
+.flight-toolbar {
+  display: inline-flex;
+  align-self: center;
+  gap: 8px;
+  max-width: calc(100vw - 32px);
+  margin-top: 14px;
+  border: 1px solid rgba(249, 249, 234, 0.16);
+  border-radius: 999px;
+  background:
+    linear-gradient(135deg, rgba(249, 249, 234, 0.08), rgba(90, 166, 189, 0.04)),
+    rgba(6, 4, 17, 0.72);
+  box-shadow: 0 20px 80px rgba(0, 0, 0, 0.35);
+  padding: 6px;
+  backdrop-filter: blur(18px);
+}
+
+.toolbar-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  border: 1px solid rgba(249, 249, 234, 0.08);
+  border-radius: 999px;
+  background: rgba(249, 249, 234, 0.055);
+  color: #f9f9ea;
+  gap: 8px;
+  padding: 0 13px;
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    transform 160ms ease;
+}
+
+.toolbar-button:hover,
+.toolbar-button.is-active {
+  border-color: rgba(255, 207, 101, 0.42);
+  background: rgba(249, 249, 234, 0.12);
+}
+
+.toolbar-button:active {
+  transform: translateY(1px);
+}
+
+.autopilot-cta {
+  border-color: rgba(215, 71, 33, 0.54);
+  background: #d74721;
+  box-shadow: 0 0 0 0 rgba(215, 71, 33, 0.48);
+  animation: autopilotPulse 1450ms ease-in-out infinite;
+}
+
+.autopilot-cta:hover {
+  background: #e04a23;
+}
+
+.service-panel.is-stowed {
+  display: none;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateX(18px);
 }
 
 .control-hint {
@@ -312,19 +393,21 @@ canvas {
   position: fixed;
   inset: 0;
   z-index: 40;
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-end;
   padding: 18px;
   background:
-    radial-gradient(circle at 40% 35%, rgba(90, 166, 189, 0.2), transparent 28%),
-    rgba(6, 4, 17, 0.72);
-  backdrop-filter: blur(12px);
+    linear-gradient(90deg, rgba(6, 4, 17, 0) 0%, rgba(6, 4, 17, 0.18) 46%, rgba(6, 4, 17, 0.68) 100%),
+    radial-gradient(circle at 26% 44%, rgba(90, 166, 189, 0.08), transparent 34%);
+  pointer-events: none;
 }
 
 .dock-modal {
   position: relative;
-  width: min(880px, calc(100vw - 36px));
+  width: min(470px, calc(100vw - 36px));
   max-height: calc(100vh - 36px);
+  align-self: center;
   overflow: auto;
   border: 1px solid rgba(6, 4, 17, 0.1);
   border-radius: 8px;
@@ -332,8 +415,14 @@ canvas {
     radial-gradient(circle at 90% 0%, rgba(215, 71, 33, 0.18), transparent 34%),
     #f9f9ea;
   color: #060411;
-  padding: clamp(24px, 5vw, 46px);
+  padding: clamp(22px, 3.2vw, 34px);
   box-shadow: 0 30px 120px rgba(0, 0, 0, 0.45);
+  pointer-events: auto;
+}
+
+.dock-modal-grid {
+  display: grid;
+  gap: 16px;
 }
 
 .modal-close {
@@ -394,14 +483,42 @@ canvas {
   }
 }
 
-@media (max-width: 1023px) {
-  .hud-panel {
-    display: none;
+@keyframes autopilotPulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 0 rgba(215, 71, 33, 0.46),
+      0 14px 38px rgba(215, 71, 33, 0.28);
   }
+  50% {
+    box-shadow:
+      0 0 0 9px rgba(215, 71, 33, 0),
+      0 18px 52px rgba(255, 207, 101, 0.38);
+  }
+}
 
+@media (max-width: 1023px) {
+  .hud-panel,
   .service-panel {
     width: min(100%, 520px);
     justify-self: center;
+  }
+
+  .service-panel.is-stowed {
+    display: none;
+  }
+
+  .modal-backdrop {
+    align-items: flex-end;
+    justify-content: center;
+    background:
+      linear-gradient(180deg, rgba(6, 4, 17, 0) 0%, rgba(6, 4, 17, 0.74) 100%),
+      radial-gradient(circle at 42% 30%, rgba(90, 166, 189, 0.08), transparent 36%);
+  }
+
+  .dock-modal {
+    width: min(720px, calc(100vw - 28px));
+    max-height: min(64vh, 620px);
   }
 }
 
@@ -418,6 +535,21 @@ canvas {
 
   .service-panel {
     padding: 12px;
+  }
+
+  .flight-toolbar {
+    width: 100%;
+    justify-content: space-between;
+    gap: 6px;
+    border-radius: 8px;
+  }
+
+  .toolbar-button {
+    min-width: 0;
+    flex: 1 1 0;
+    gap: 6px;
+    padding: 0 8px;
+    font-size: 10px;
   }
 
   .service-list {

@@ -1,6 +1,7 @@
 import {
   Compass,
   Gauge,
+  ListChecks,
   MousePointer2,
   Navigation,
   Radio,
@@ -13,6 +14,8 @@ import * as THREE from "three";
 import { CSS2DObject, CSS2DRenderer } from "three/examples/jsm/renderers/CSS2DRenderer.js";
 import type { ServicePlanet } from "../data/services";
 
+type FlightMode = "Manual" | "Autopilot" | "Docked";
+
 type SpaceExperienceProps = {
   services: ServicePlanet[];
 };
@@ -21,7 +24,7 @@ type Telemetry = {
   speed: number;
   distance: number | null;
   targetName: string;
-  mode: "Manual" | "Autopilot";
+  mode: FlightMode;
 };
 
 type NearbyService = {
@@ -43,7 +46,7 @@ type PlanetRuntime = {
 type SceneBridge = {
   flyTo: (id: string) => void;
   dockCurrent: () => void;
-  releaseAutopilot: () => void;
+  releaseDock: () => void;
 };
 
 declare global {
@@ -409,6 +412,8 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
   });
   const [nearby, setNearby] = useState<NearbyService | null>(null);
   const [dockedService, setDockedService] = useState<ServicePlanet | null>(null);
+  const [showControls, setShowControls] = useState(false);
+  const [showDestinations, setShowDestinations] = useState(false);
 
   const selectedService = useMemo(
     () => services.find((service) => service.id === selectedId) ?? services[0],
@@ -422,12 +427,13 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
   const selectTarget = useCallback((id: string) => {
     setSelectedId(id);
     selectedIdRef.current = id;
+    setShowDestinations(false);
     bridgeRef.current?.flyTo(id);
   }, []);
 
   const closeDock = useCallback(() => {
     setDockedService(null);
-    bridgeRef.current?.releaseAutopilot();
+    bridgeRef.current?.releaseDock();
   }, []);
 
   useEffect(() => {
@@ -448,7 +454,20 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     const targetWorld = new THREE.Vector3();
     const cameraLookAt = new THREE.Vector3();
     const shipWorld = new THREE.Vector3();
+    const shipAim = new THREE.Vector3();
+    const avoidanceNormal = new THREE.Vector3();
+    const dockOffset = new THREE.Vector3();
+    const cameraOffset = new THREE.Vector3();
+    const cameraDockTarget = new THREE.Vector3();
+    const dockTangent = new THREE.Vector3();
+    const lookRig = new THREE.Object3D();
     const autopilotTarget = { id: selectedIdRef.current, active: false };
+    const dockedTarget = {
+      active: false,
+      angle: 0,
+      id: "",
+      radius: 0
+    };
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x060411);
@@ -639,8 +658,16 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     const ship = createShip();
     scene.add(ship);
 
-    const setMode = (mode: "Manual" | "Autopilot") => {
+    const setMode = (mode: FlightMode) => {
       setTelemetry((previous) => (previous.mode === mode ? previous : { ...previous, mode }));
+    };
+
+    const aimShipAt = (point: THREE.Vector3, amount: number) => {
+      lookRig.position.copy(ship.position);
+      lookRig.up.set(0, 1, 0);
+      lookRig.lookAt(point);
+      lookRig.rotateY(Math.PI);
+      ship.quaternion.slerp(lookRig.quaternion, amount);
     };
 
     const dockCurrent = () => {
@@ -657,19 +684,30 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
 
       if (candidate && candidate.distance < 4.8) {
         autopilotTarget.active = false;
-        setMode("Manual");
+        candidate.planet.group.getWorldPosition(candidate.planet.worldPosition);
+        const relative = ship.position.clone().sub(candidate.planet.worldPosition);
+        dockedTarget.active = true;
+        dockedTarget.id = candidate.planet.service.id;
+        dockedTarget.angle = Math.atan2(relative.z, relative.x);
+        dockedTarget.radius = candidate.planet.service.size + 5.2;
+        velocity.multiplyScalar(0);
+        selectedIdRef.current = candidate.planet.service.id;
+        setSelectedId(candidate.planet.service.id);
+        setMode("Docked");
         setDockedService(candidate.planet.service);
       }
     };
 
     bridgeRef.current = {
       flyTo: (id: string) => {
+        dockedTarget.active = false;
         autopilotTarget.id = id;
         autopilotTarget.active = true;
         setMode("Autopilot");
       },
       dockCurrent,
-      releaseAutopilot: () => {
+      releaseDock: () => {
+        dockedTarget.active = false;
         autopilotTarget.active = false;
         setMode("Manual");
       }
@@ -684,6 +722,9 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
         dockCurrent();
       }
       if (event.code === "Escape") {
+        dockedTarget.active = false;
+        autopilotTarget.active = false;
+        setMode("Manual");
         setDockedService(null);
       }
     };
@@ -697,6 +738,9 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     let lastY = 0;
 
     const onPointerDown = (event: PointerEvent) => {
+      if (dockedTarget.active) {
+        return;
+      }
       dragging = true;
       lastX = event.clientX;
       lastY = event.clientY;
@@ -705,6 +749,10 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
 
     const onPointerMove = (event: PointerEvent) => {
       if (!dragging) {
+        return;
+      }
+      if (dockedTarget.active) {
+        dragging = false;
         return;
       }
       const dx = event.clientX - lastX;
@@ -764,7 +812,24 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       selectedRuntime.group.getWorldPosition(targetWorld);
       const distanceToSelected = shipWorld.distanceTo(targetWorld) - selectedRuntime.service.size;
 
-      if (autopilotTarget.active) {
+      if (dockedTarget.active) {
+        const dockRuntime =
+          planetRuntimes.find((planet) => planet.service.id === dockedTarget.id) ?? selectedRuntime;
+        dockRuntime.group.getWorldPosition(targetWorld);
+        dockedTarget.angle += delta * 0.36;
+        dockedTarget.radius = dockRuntime.service.size + 5.2;
+        dockOffset.set(
+          Math.cos(dockedTarget.angle) * dockedTarget.radius,
+          dockRuntime.service.size * 0.45 + 1.1 + Math.sin(dockedTarget.angle * 1.7) * 0.35,
+          Math.sin(dockedTarget.angle) * dockedTarget.radius
+        );
+        desired.copy(targetWorld).add(dockOffset);
+        ship.position.lerp(desired, 1 - Math.pow(0.004, delta));
+        velocity.multiplyScalar(0);
+        dockTangent.set(-Math.sin(dockedTarget.angle), 0.08, Math.cos(dockedTarget.angle)).normalize();
+        shipAim.copy(ship.position).add(dockTangent);
+        aimShipAt(shipAim, 1 - Math.pow(0.002, delta));
+      } else if (autopilotTarget.active) {
         const targetRuntime =
           planetRuntimes.find((planet) => planet.service.id === autopilotTarget.id) ?? selectedRuntime;
         targetRuntime.group.getWorldPosition(targetWorld);
@@ -775,10 +840,10 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
         const distance = ship.position.distanceTo(desired);
         const direction = desired.clone().sub(ship.position).normalize();
         const targetSpeed = clamp(distance * 0.5, 3.5, 16);
-        velocity.lerp(direction.multiplyScalar(targetSpeed), 1 - Math.pow(0.04, delta));
-
-        const lookTarget = targetWorld.clone().addScaledVector(awayFromSun, 1.8);
-        ship.lookAt(lookTarget);
+        shipAim.copy(ship.position).add(direction);
+        aimShipAt(shipAim, 1 - Math.pow(0.006, delta));
+        forward.set(0, 0, -1).applyQuaternion(ship.quaternion).normalize();
+        velocity.lerp(forward.multiplyScalar(targetSpeed), 1 - Math.pow(0.035, delta));
 
         if (distance < 2.4) {
           autopilotTarget.active = false;
@@ -815,6 +880,44 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       ship.position.addScaledVector(velocity, delta);
       ship.position.y = clamp(ship.position.y, -16, 28);
 
+      if (!dockedTarget.active) {
+        for (const runtime of planetRuntimes) {
+          runtime.group.getWorldPosition(runtime.worldPosition);
+          avoidanceNormal.copy(ship.position).sub(runtime.worldPosition);
+          const distance = avoidanceNormal.length();
+          const safeDistance = runtime.service.size + 1.55;
+          if (distance < safeDistance) {
+            if (distance < 0.001) {
+              avoidanceNormal.copy(runtime.worldPosition).normalize();
+            } else {
+              avoidanceNormal.divideScalar(distance);
+            }
+            ship.position.copy(runtime.worldPosition).addScaledVector(avoidanceNormal, safeDistance);
+            const inwardSpeed = velocity.dot(avoidanceNormal);
+            if (inwardSpeed < 0) {
+              velocity.addScaledVector(avoidanceNormal, -inwardSpeed * 1.35);
+            }
+            velocity.multiplyScalar(0.42);
+          }
+        }
+
+        const sunSafeDistance = 7.8;
+        const sunDistance = ship.position.length();
+        if (sunDistance < sunSafeDistance) {
+          if (sunDistance < 0.001) {
+            avoidanceNormal.set(1, 0, 0);
+          } else {
+            avoidanceNormal.copy(ship.position).normalize();
+          }
+          ship.position.copy(avoidanceNormal).multiplyScalar(sunSafeDistance);
+          const inwardSpeed = velocity.dot(avoidanceNormal);
+          if (inwardSpeed < 0) {
+            velocity.addScaledVector(avoidanceNormal, -inwardSpeed * 1.2);
+          }
+          velocity.multiplyScalar(0.36);
+        }
+      }
+
       let nearestRuntime: PlanetRuntime | null = null;
       let nearestDistance = Number.POSITIVE_INFINITY;
       for (const runtime of planetRuntimes) {
@@ -843,12 +946,29 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
         }
       }
 
-      forward.set(0, 0, -1).applyQuaternion(ship.quaternion).normalize();
-      const cameraOffset = new THREE.Vector3(0, 4.8, 12.5).applyQuaternion(ship.quaternion);
-      camera.position.lerp(ship.position.clone().add(cameraOffset), 1 - Math.pow(0.015, delta));
-      cameraLookAt.copy(ship.position).addScaledVector(forward, 12);
-      cameraLookAt.y += 1.2;
-      camera.lookAt(cameraLookAt);
+      if (dockedTarget.active) {
+        const dockRuntime =
+          planetRuntimes.find((planet) => planet.service.id === dockedTarget.id) ?? selectedRuntime;
+        dockRuntime.group.getWorldPosition(targetWorld);
+        const cameraAngle = dockedTarget.angle - 0.68;
+        const cameraRadius = dockedTarget.radius + dockRuntime.service.size + 7.5;
+        cameraOffset.set(
+          Math.cos(cameraAngle) * cameraRadius,
+          dockRuntime.service.size + 5.4,
+          Math.sin(cameraAngle) * cameraRadius
+        );
+        camera.position.lerp(targetWorld.clone().add(cameraOffset), 1 - Math.pow(0.012, delta));
+        cameraDockTarget.copy(targetWorld).lerp(ship.position, 0.2);
+        cameraDockTarget.y += dockRuntime.service.size * 0.22;
+        camera.lookAt(cameraDockTarget);
+      } else {
+        forward.set(0, 0, -1).applyQuaternion(ship.quaternion).normalize();
+        cameraOffset.set(0, 4.8, 12.5).applyQuaternion(ship.quaternion);
+        camera.position.lerp(ship.position.clone().add(cameraOffset), 1 - Math.pow(0.015, delta));
+        cameraLookAt.copy(ship.position).addScaledVector(forward, 12);
+        cameraLookAt.y += 1.2;
+        camera.lookAt(cameraLookAt);
+      }
 
       if (elapsed - lastTelemetry > 0.12) {
         lastTelemetry = elapsed;
@@ -856,7 +976,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
           speed: velocity.length(),
           distance: distanceToSelected,
           targetName: selectedRuntime.service.name,
-          mode: autopilotTarget.active ? "Autopilot" : "Manual"
+          mode: dockedTarget.active ? "Docked" : autopilotTarget.active ? "Autopilot" : "Manual"
         });
       }
 
@@ -902,7 +1022,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
   }, [services]);
 
   return (
-    <main className="relative h-screen w-screen overflow-hidden bg-void text-parchment">
+    <main className={`relative h-screen w-screen overflow-hidden bg-void text-parchment ${dockedService ? "is-docked" : ""}`}>
       <div ref={mountRef} className="absolute inset-0 cursor-grab active:cursor-grabbing" />
 
       <div className="pointer-events-none absolute inset-0 z-10 flex flex-col justify-between p-4 sm:p-6">
@@ -927,8 +1047,35 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
           </div>
         </header>
 
+        {!dockedService ? (
+          <div className="pointer-events-auto flight-toolbar" aria-label="Flight actions">
+            <button
+              className={`toolbar-button ${showControls ? "is-active" : ""}`}
+              type="button"
+              aria-expanded={showControls}
+              onClick={() => setShowControls((value) => !value)}
+            >
+              <Gauge className="h-4 w-4" />
+              Controls
+            </button>
+            <button
+              className={`toolbar-button ${showDestinations ? "is-active" : ""}`}
+              type="button"
+              aria-expanded={showDestinations}
+              onClick={() => setShowDestinations((value) => !value)}
+            >
+              <ListChecks className="h-4 w-4" />
+              Destinations
+            </button>
+            <button className="toolbar-button autopilot-cta" type="button" onClick={() => selectTarget(selectedService.id)}>
+              <Navigation className="h-4 w-4" />
+              Autopilot
+            </button>
+          </div>
+        ) : null}
+
         <section className="grid flex-1 grid-cols-1 items-end gap-4 pt-4 lg:grid-cols-[minmax(260px,340px)_1fr_minmax(280px,360px)]">
-          <div className="pointer-events-auto hud-panel order-2 self-end lg:order-1">
+          <div className={`pointer-events-auto hud-panel order-2 self-end lg:order-1 ${showControls ? "" : "is-hidden"}`}>
             <div className="flex items-center gap-2 border-b border-parchment/10 pb-3">
               <Rocket className="h-4 w-4 text-ember" />
               <h1 className="font-display text-sm uppercase text-parchment">Pirxey scout controls</h1>
@@ -949,7 +1096,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
           </div>
 
           <div className="pointer-events-none order-1 flex min-h-[170px] items-end justify-center lg:order-2">
-            {nearby?.canDock ? (
+            {nearby?.canDock && !dockedService ? (
               <button
                 className="pointer-events-auto dock-button"
                 type="button"
@@ -959,6 +1106,10 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
                 Dock with {nearby.name}
                 <span>E</span>
               </button>
+            ) : dockedService ? (
+              <div className="pointer-events-none hidden rounded-full border border-orbit/30 bg-void/45 px-4 py-2 font-display text-xs uppercase text-parchment/70 backdrop-blur-md md:block">
+                Docked orbit active - camera tracking {dockedService.name}
+              </div>
             ) : (
               <div className="pointer-events-none hidden rounded-full border border-parchment/15 bg-void/35 px-4 py-2 font-display text-xs uppercase text-parchment/55 backdrop-blur-md md:block">
                 Nearest orbit: {nearby ? `${nearby.name} - ${formatDistance(nearby.distance)}` : "scanning"}
@@ -966,7 +1117,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
             )}
           </div>
 
-          <aside className="pointer-events-auto service-panel order-3 self-end">
+          <aside className={`pointer-events-auto service-panel order-3 self-end ${dockedService || !showDestinations ? "is-stowed" : ""}`}>
             <div className="mb-3 flex items-center justify-between gap-3">
               <div>
                 <p className="font-display text-xs uppercase text-orbit">Service planets</p>
@@ -992,11 +1143,6 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
                 </button>
               ))}
             </div>
-
-            <button className="autopilot-button mt-4" type="button" onClick={() => selectTarget(selectedService.id)}>
-              <Navigation className="h-4 w-4" />
-              Engage autopilot
-            </button>
           </aside>
         </section>
       </div>
@@ -1008,12 +1154,12 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
               <X className="h-5 w-5" />
             </button>
             <p className="font-display text-xs uppercase text-ember">{dockedService.eyebrow}</p>
-            <h2 id="dock-title" className="mt-2 font-display text-3xl text-void sm:text-5xl">
+            <h2 id="dock-title" className="mt-2 font-display text-3xl text-void">
               {dockedService.title}
             </h2>
             <p className="mt-4 max-w-2xl font-body text-base leading-7 text-void/75">{dockedService.description}</p>
 
-            <div className="mt-6 grid gap-6 md:grid-cols-[1fr_0.8fr]">
+            <div className="dock-modal-grid mt-6">
               <div>
                 <h3 className="font-display text-xs uppercase text-void/50">Subservices</h3>
                 <div className="mt-3 grid gap-2">
