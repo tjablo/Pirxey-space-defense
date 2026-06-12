@@ -30,15 +30,15 @@ export const WEAPON_CATALOG: Record<WeaponId, WeaponDefinition> = {
     slot: "primary",
     price: 0,
     ammoCapacity: null,
-    cooldown: 0.18,
-    description: "Standard green defense bolts. Reliable, but built for early waves."
+    cooldown: 0.32,
+    description: "Standard fallback defense bolts. Infinite ammo, but slower and weaker than purchased weapons."
   },
   "pulse-laser": {
     id: "pulse-laser",
     name: "Pulse Laser",
     slot: "primary",
     price: 180,
-    ammoCapacity: 5000,
+    ammoCapacity: 1800,
     cooldown: 0.1,
     description: "Fast focused laser fire with high projectile speed and clean aim feedback."
   },
@@ -47,7 +47,7 @@ export const WEAPON_CATALOG: Record<WeaponId, WeaponDefinition> = {
     name: "Twin Cannons",
     slot: "primary",
     price: 220,
-    ammoCapacity: 2800,
+    ammoCapacity: 1200,
     cooldown: 0.18,
     description: "Two synchronized side guns mounted on the left and right side of the scout."
   },
@@ -56,7 +56,7 @@ export const WEAPON_CATALOG: Record<WeaponId, WeaponDefinition> = {
     name: "Star Spiral Laser",
     slot: "primary",
     price: 260,
-    ammoCapacity: 1800,
+    ammoCapacity: 1200,
     cooldown: 0.2,
     description: "Spectacular primary laser that draws a rotating star-spiral around the firing axis."
   },
@@ -65,7 +65,7 @@ export const WEAPON_CATALOG: Record<WeaponId, WeaponDefinition> = {
     name: "Rapid Repeater",
     slot: "primary",
     price: 240,
-    ammoCapacity: 7200,
+    ammoCapacity: 1600,
     cooldown: 0.07,
     description: "Light rapid-fire primary weapon for close defensive sweeps."
   },
@@ -74,7 +74,7 @@ export const WEAPON_CATALOG: Record<WeaponId, WeaponDefinition> = {
     name: "Homing Missiles",
     slot: "secondary",
     price: 280,
-    ammoCapacity: 120,
+    ammoCapacity: 100,
     cooldown: 0.92,
     description: "Right-click missile that tracks a hostile and can clip one target packed tightly nearby."
   },

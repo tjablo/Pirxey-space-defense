@@ -68,6 +68,9 @@ export type EnemyRuntime = {
   reward: number;
   separationRadius: number;
   targetMode: EnemyTargetMode;
+  hitFlash?: number;
+  hitLight?: THREE.PointLight;
+  hitShield?: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
   weaponPorts?: THREE.Vector3[];
 };
 

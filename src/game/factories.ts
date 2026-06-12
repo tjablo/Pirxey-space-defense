@@ -80,6 +80,7 @@ type EnemyBugAssets = {
   bodyMaterial: THREE.MeshStandardMaterial;
   eyeGeometry: THREE.SphereGeometry;
   eyeMaterial: THREE.MeshBasicMaterial;
+  hitShieldGeometry: THREE.SphereGeometry;
   legGeometry: THREE.CylinderGeometry;
   shellGeometry: THREE.SphereGeometry;
   shellMaterial: THREE.MeshStandardMaterial;
@@ -96,6 +97,7 @@ type DeathStarAssets = {
   eyeSocketGeometry: THREE.TorusGeometry;
   eyeSocketMaterial: THREE.MeshStandardMaterial;
   glowMaterial: THREE.SpriteMaterial;
+  hitShieldGeometry: THREE.SphereGeometry;
   ringGeometry: THREE.TorusGeometry;
   ringMaterial: THREE.MeshBasicMaterial;
 };
@@ -111,6 +113,15 @@ let deathStarAssets: DeathStarAssets | null = null;
 const explosionTexture = markShared(createRadialTexture("rgba(255,207,101,1)", "rgba(215,71,33,0)", 0.8));
 const explosionRingGeometry = markShared(new THREE.RingGeometry(0.55, 1.0, 48));
 const explosionCoreGeometry = markShared(new THREE.SphereGeometry(0.36, 16, 10));
+
+const createHitShieldMaterial = () =>
+  new THREE.MeshBasicMaterial({
+    color: 0x6fb5c8,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+  });
 
 const getPlayerBoltAssets = () => {
   if (!playerBoltAssets) {
@@ -319,6 +330,7 @@ const getEnemyBugAssets = () => {
           opacity: 0.92
         })
       ),
+      hitShieldGeometry: markShared(new THREE.SphereGeometry(0.64, 24, 12)),
       legGeometry: markShared(new THREE.CylinderGeometry(0.025, 0.035, 0.86, 8)),
       shellGeometry: markShared(new THREE.SphereGeometry(0.48, 20, 12)),
       shellMaterial: markShared(
@@ -396,6 +408,7 @@ const getDeathStarAssets = () => {
           blending: THREE.AdditiveBlending
         })
       ),
+      hitShieldGeometry: markShared(new THREE.SphereGeometry(2.06, 32, 16)),
       ringGeometry: markShared(new THREE.TorusGeometry(1.78, 0.014, 8, 96)),
       ringMaterial: markShared(
         new THREE.MeshBasicMaterial({
@@ -483,6 +496,7 @@ export const createRuntimeWarmupGroup = () => {
     new THREE.Mesh(bug.bodyGeometry, bug.bodyMaterial),
     new THREE.Mesh(bug.shellGeometry, bug.shellMaterial),
     new THREE.Mesh(bug.eyeGeometry, bug.eyeMaterial),
+    new THREE.Mesh(bug.hitShieldGeometry, createHitShieldMaterial()),
     new THREE.Mesh(bug.legGeometry, bug.bodyMaterial),
     new THREE.Sprite(bug.threatGlowMaterial)
   );
@@ -493,6 +507,7 @@ export const createRuntimeWarmupGroup = () => {
     new THREE.Mesh(boss.cannonGeometry, boss.cannonMaterial),
     new THREE.Mesh(boss.eyeGeometry, boss.eyeMaterial),
     new THREE.Mesh(boss.eyeSocketGeometry, boss.eyeSocketMaterial),
+    new THREE.Mesh(boss.hitShieldGeometry, createHitShieldMaterial()),
     new THREE.Mesh(boss.ringGeometry, boss.ringMaterial),
     new THREE.Mesh(boss.ringGeometry, boss.ringMaterial),
     new THREE.Sprite(boss.glowMaterial)
@@ -511,13 +526,25 @@ export const createRuntimeWarmupGroup = () => {
   return group;
 };
 
-export const createPlayerBolt = (position: THREE.Vector3, direction: THREE.Vector3): ProjectileRuntime => {
+export const createPlayerBolt = (
+  position: THREE.Vector3,
+  direction: THREE.Vector3,
+  weaponId: Extract<WeaponId, "scout-bolts" | "twin-cannons"> = "scout-bolts"
+): ProjectileRuntime => {
   const group = new THREE.Group();
   const normalizedDirection = direction.clone().normalize();
   const assets = getPlayerBoltAssets();
   const core = new THREE.Mesh(assets.coreGeometry, assets.coreMaterial);
   const beam = new THREE.Mesh(assets.beamGeometry, assets.beamMaterial);
   const tail = new THREE.Mesh(assets.tailGeometry, assets.tailMaterial);
+  const isTwinCannons = weaponId === "twin-cannons";
+
+  if (!isTwinCannons) {
+    beam.scale.setScalar(0.86);
+    core.scale.setScalar(0.82);
+    tail.scale.setScalar(0.78);
+  }
+
   tail.position.y = -0.62;
   group.add(beam, core, tail);
   group.position.copy(position);
@@ -525,13 +552,13 @@ export const createPlayerBolt = (position: THREE.Vector3, direction: THREE.Vecto
 
   return {
     id: projectileId++,
-    damage: 1,
-    life: 1.45,
+    damage: isTwinCannons ? 0.82 : 0.55,
+    life: isTwinCannons ? 1.35 : 1.2,
     mesh: group,
     owner: "player",
-    radius: 0.35,
-    velocity: normalizedDirection.multiplyScalar(48),
-    weaponId: "scout-bolts"
+    radius: isTwinCannons ? 0.32 : 0.25,
+    velocity: normalizedDirection.multiplyScalar(isTwinCannons ? 58 : 38),
+    weaponId
   };
 };
 
@@ -589,12 +616,12 @@ export const createPlayerLaser = (
 
   return {
     id: projectileId++,
-    damage: weaponId === "rail-splitter" ? 2.35 : weaponId === "rapid-repeater" ? 0.72 : 0.86,
+    damage: weaponId === "rail-splitter" ? 2.55 : weaponId === "rapid-repeater" ? 0.74 : 1.08,
     life: weaponId === "rail-splitter" ? 0.92 : 0.82,
     mesh: group,
     owner: "player",
     radius: weaponId === "rail-splitter" ? 0.52 : 0.26,
-    velocity: normalizedDirection.multiplyScalar(74),
+    velocity: normalizedDirection.multiplyScalar(weaponId === "rail-splitter" ? 78 : weaponId === "rapid-repeater" ? 76 : 84),
     weaponId
   };
 };
@@ -741,6 +768,11 @@ export const createEnemyBug = (
   threatGlow.scale.set(2.2, 2.2, 1);
   group.add(threatGlow);
 
+  const hitShield = new THREE.Mesh(assets.hitShieldGeometry, createHitShieldMaterial());
+  hitShield.name = "enemy-hit-shield";
+  hitShield.scale.set(1.05, 0.72, 1.45);
+  group.add(hitShield);
+
   for (const side of [-1, 1]) {
     for (let i = 0; i < 3; i += 1) {
       const leg = new THREE.Mesh(assets.legGeometry, assets.bodyMaterial);
@@ -754,6 +786,9 @@ export const createEnemyBug = (
   const light = new THREE.PointLight(0xd74721, 1.05, 7.5);
   light.position.set(0, 0.1, -0.3);
   group.add(light);
+  const hitLight = new THREE.PointLight(0x6fb5c8, 0, 7.5);
+  hitLight.name = "enemy-hit-light";
+  group.add(hitLight);
   group.scale.setScalar(1.08);
 
   return {
@@ -762,7 +797,10 @@ export const createEnemyBug = (
     attackCooldown: config.attackCooldown,
     body,
     group,
+    hitFlash: 0,
+    hitLight,
     hitRadius: 0.75,
+    hitShield,
     hp: config.enemyHp,
     kind: "void-bug",
     maxHp: config.enemyHp,
@@ -820,6 +858,10 @@ export const createDeathStarBoss = (
   glow.scale.set(3.7, 3.7, 1);
   group.add(glow);
 
+  const hitShield = new THREE.Mesh(assets.hitShieldGeometry, createHitShieldMaterial());
+  hitShield.name = "enemy-hit-shield";
+  group.add(hitShield);
+
   const weaponPorts = [
     new THREE.Vector3(-0.95, 0.24, -1.64),
     new THREE.Vector3(0.95, 0.24, -1.64),
@@ -837,6 +879,9 @@ export const createDeathStarBoss = (
   const light = new THREE.PointLight(0xff2f2f, 2.4, 15);
   light.position.set(0, 0.08, -1.65);
   group.add(light);
+  const hitLight = new THREE.PointLight(0x6fb5c8, 0, 18);
+  hitLight.name = "enemy-hit-light";
+  group.add(hitLight);
 
   const hp = 24 + wave * 4;
 
@@ -846,7 +891,10 @@ export const createDeathStarBoss = (
     attackCooldown: Math.max(0.85, config.attackCooldown * 0.34),
     body,
     group,
+    hitFlash: 0,
+    hitLight,
     hitRadius: 2.25,
+    hitShield,
     hp,
     kind: "death-star",
     maxHp: hp,

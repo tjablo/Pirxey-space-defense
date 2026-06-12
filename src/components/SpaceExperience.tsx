@@ -144,6 +144,7 @@ declare global {
 }
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+const ENEMY_HIT_FLASH_DURATION = 0.28;
 
 const createTouchFlightInput = (): TouchFlightInput => ({
   ascend: false,
@@ -1611,6 +1612,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
 
     const damageEnemy = (enemy: EnemyRuntime, damage: number, origin: THREE.Vector3) => {
       enemy.hp -= damage;
+      enemy.hitFlash = Math.max(enemy.hitFlash ?? 0, ENEMY_HIT_FLASH_DURATION);
       if (enemy.targetMode === "planet") {
         enemy.state = "aggro";
         enemy.attackDelay = 0;
@@ -1773,7 +1775,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
         for (const x of [-0.68, 0.68]) {
           muzzleOffset.set(x, -0.05, -2.08).applyQuaternion(ship.quaternion);
           projectilePosition.copy(ship.position).add(muzzleOffset);
-          addProjectile(createPlayerBolt(projectilePosition, forward));
+          addProjectile(createPlayerBolt(projectilePosition, forward, "twin-cannons"));
         }
       } else if (weaponId === "rail-splitter") {
         muzzleOffset.set(0, -0.02, -2.38).applyQuaternion(ship.quaternion);
@@ -2411,6 +2413,38 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
 
       if (phase === "Running") {
         for (const enemy of enemies) {
+          if ((enemy.hitFlash ?? 0) > 0) {
+            enemy.hitFlash = Math.max(0, (enemy.hitFlash ?? 0) - delta);
+            const enemyFlashRatio = clamp(enemy.hitFlash / ENEMY_HIT_FLASH_DURATION, 0, 1);
+            if (enemy.hitShield) {
+              enemy.hitShield.material.opacity = enemyFlashRatio * (enemy.kind === "death-star" ? 0.3 : 0.42);
+              if (enemy.kind === "death-star") {
+                enemy.hitShield.scale.setScalar(1 + enemyFlashRatio * 0.16);
+              } else {
+                enemy.hitShield.scale.set(
+                  1.05 + enemyFlashRatio * 0.18,
+                  0.72 + enemyFlashRatio * 0.12,
+                  1.45 + enemyFlashRatio * 0.24
+                );
+              }
+            }
+            if (enemy.hitLight) {
+              enemy.hitLight.intensity = enemyFlashRatio * (enemy.kind === "death-star" ? 4.2 : 2.6);
+            }
+          } else {
+            if (enemy.hitShield && enemy.hitShield.material.opacity !== 0) {
+              enemy.hitShield.material.opacity = 0;
+              if (enemy.kind === "death-star") {
+                enemy.hitShield.scale.setScalar(1);
+              } else {
+                enemy.hitShield.scale.set(1.05, 0.72, 1.45);
+              }
+            }
+            if (enemy.hitLight && enemy.hitLight.intensity !== 0) {
+              enemy.hitLight.intensity = 0;
+            }
+          }
+
           const huntsShip = enemy.targetMode === "ship";
           let targetRuntime: PlanetRuntime | null = null;
 
