@@ -1611,7 +1611,13 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       }
 
       secondaryFireCooldown = weapon.cooldown;
-      audioRef.current.shoot();
+      if (weaponId === "homing-missiles") {
+        audioRef.current.missile();
+      } else if (weaponId === "plasma-orb" || weaponId === "arc-pulse") {
+        audioRef.current.plasma();
+      } else {
+        audioRef.current.shoot();
+      }
     };
 
     const spawnEnemyShot = (enemy: EnemyRuntime, target: THREE.Vector3, canDamagePlanets = true) => {
