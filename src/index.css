@@ -1033,9 +1033,25 @@ canvas.is-pointer-locked {
   animation: dockPulse 1500ms ease-in-out infinite;
 }
 
-.dock-button span {
+.dock-button svg {
+  flex: 0 0 auto;
+}
+
+.dock-button-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dock-button-text-short {
+  display: none;
+}
+
+.dock-button-key {
   display: inline-flex;
   align-items: center;
+  flex: 0 0 auto;
   justify-content: center;
   min-width: 26px;
   height: 26px;
@@ -1357,6 +1373,11 @@ canvas.is-pointer-locked {
     width: min(136px, 40vw);
   }
 
+  .mobile-navigation-cluster {
+    width: min(140px, 40vw);
+    padding: 5px;
+  }
+
   .mobile-throttle-row {
     display: grid;
     grid-template-columns: 36px minmax(44px, 1fr) 36px;
@@ -1364,10 +1385,16 @@ canvas.is-pointer-locked {
   }
 
   .mobile-control-row,
-  .mobile-fire-row {
+  .mobile-fire-row,
+  .mobile-target-row {
     display: flex;
     justify-content: center;
     gap: 5px;
+  }
+
+  .mobile-target-row {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .mobile-fire-row {
@@ -1460,6 +1487,22 @@ canvas.is-pointer-locked {
 
   .mobile-control-button.is-compact {
     min-height: 31px;
+  }
+
+  .mobile-control-button.is-nav-action {
+    min-height: 32px;
+    border-color: rgba(90, 166, 189, 0.26);
+    background: rgba(90, 166, 189, 0.11);
+  }
+
+  .mobile-control-button.is-autopilot {
+    border-color: rgba(215, 71, 33, 0.5);
+    background: rgba(215, 71, 33, 0.2);
+    color: #ffcf65;
+  }
+
+  .mobile-control-button.is-vertical {
+    border-color: rgba(111, 181, 200, 0.32);
   }
 
   .service-label {
@@ -2163,6 +2206,10 @@ canvas.is-pointer-locked {
     width: 122px;
   }
 
+  .mobile-navigation-cluster {
+    width: 132px;
+  }
+
   .mobile-throttle-row {
     grid-template-columns: 32px minmax(38px, 1fr) 32px;
   }
@@ -2186,6 +2233,10 @@ canvas.is-pointer-locked {
   }
 
   .mobile-control-button.is-compact {
+    min-height: 28px;
+  }
+
+  .mobile-control-button.is-nav-action {
     min-height: 28px;
   }
 
@@ -2382,6 +2433,31 @@ canvas.is-pointer-locked {
     right: calc(var(--safe-right) + 8px);
     bottom: calc(var(--safe-bottom) + 8px);
     left: calc(var(--safe-left) + 8px);
+  }
+
+  .dock-button {
+    position: absolute;
+    right: calc(var(--safe-right) + 8px);
+    bottom: calc(var(--safe-bottom) + 64px);
+    z-index: 25;
+    max-width: min(156px, calc(100vw - var(--safe-left) - var(--safe-right) - 24px));
+    min-height: 36px;
+    padding: 0 10px;
+    font-size: 10px;
+    box-shadow: 0 12px 34px rgba(215, 71, 33, 0.32);
+  }
+
+  .dock-button-text-full {
+    display: none;
+  }
+
+  .dock-button-text-short {
+    display: inline;
+  }
+
+  .dock-button-key {
+    min-width: 22px;
+    height: 22px;
   }
 
   .weapon-shop-bubble {

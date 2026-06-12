@@ -812,6 +812,26 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     [canUseNavigation, destroyedPlanetIds]
   );
 
+  const selectAdjacentTarget = useCallback(
+    (direction: -1 | 1) => {
+      if (!canUseNavigation) {
+        return;
+      }
+      const availableServices = services.filter((service) => !destroyedPlanetIds.includes(service.id));
+      if (availableServices.length === 0) {
+        return;
+      }
+      const currentIndex = availableServices.findIndex((service) => service.id === selectedIdRef.current);
+      const safeIndex = currentIndex >= 0 ? currentIndex : 0;
+      const nextIndex = (safeIndex + direction + availableServices.length) % availableServices.length;
+      const nextService = availableServices[nextIndex];
+      if (nextService) {
+        selectTarget(nextService.id);
+      }
+    },
+    [canUseNavigation, destroyedPlanetIds, selectTarget, services]
+  );
+
   const closeDock = useCallback(() => {
     setDockedService(null);
     bridgeRef.current?.releaseDock();
@@ -3017,40 +3037,65 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
             />
           </div>
 
-          <div className="mobile-control-cluster mobile-control-cluster-right">
-            <div className="mobile-fire-row">
-              <MobileFlightButton
-                label="Fire"
-                className="is-fire"
-                icon={<Crosshair />}
-                pressInput={{ primaryFire: true }}
-                setTouchInput={setTouchInput}
-              />
-              <MobileFlightButton
-                label="Alt"
-                className="is-alt-fire"
-                ariaLabel="Fire secondary weapon"
-                icon={<Zap />}
-                pressInput={{ secondaryFire: true }}
-                setTouchInput={setTouchInput}
-              />
-            </div>
-            <div className="mobile-control-row">
-              <MobileFlightButton
-                label="Evade L"
-                className="is-compact"
-                icon={<RotateCcw />}
-                pressInput={{ rollLeft: true }}
-                setTouchInput={setTouchInput}
-              />
-              <MobileFlightButton
-                label="Evade R"
-                className="is-compact"
-                icon={<RotateCcw className="mobile-flip-icon" />}
-                pressInput={{ rollRight: true }}
-                setTouchInput={setTouchInput}
-              />
-            </div>
+          <div className={`mobile-control-cluster mobile-control-cluster-right ${canUseNavigation ? "mobile-navigation-cluster" : ""}`}>
+            {canUseNavigation ? (
+              <div className="mobile-target-row" aria-label="Touch destination navigation">
+                <MobileActionButton
+                  label="Previous target"
+                  className="is-nav-action"
+                  icon={<ChevronLeft />}
+                  onClick={() => selectAdjacentTarget(-1)}
+                />
+                <MobileActionButton
+                  label="Autopilot"
+                  className="is-nav-action is-autopilot"
+                  icon={<Navigation />}
+                  onClick={() => selectTarget(selectedService.id)}
+                />
+                <MobileActionButton
+                  label="Next target"
+                  className="is-nav-action"
+                  icon={<ChevronRight />}
+                  onClick={() => selectAdjacentTarget(1)}
+                />
+              </div>
+            ) : (
+              <>
+                <div className="mobile-fire-row">
+                  <MobileFlightButton
+                    label="Fire"
+                    className="is-fire"
+                    icon={<Crosshair />}
+                    pressInput={{ primaryFire: true }}
+                    setTouchInput={setTouchInput}
+                  />
+                  <MobileFlightButton
+                    label="Alt"
+                    className="is-alt-fire"
+                    ariaLabel="Fire secondary weapon"
+                    icon={<Zap />}
+                    pressInput={{ secondaryFire: true }}
+                    setTouchInput={setTouchInput}
+                  />
+                </div>
+                <div className="mobile-control-row">
+                  <MobileFlightButton
+                    label="Evade L"
+                    className="is-compact"
+                    icon={<RotateCcw />}
+                    pressInput={{ rollLeft: true }}
+                    setTouchInput={setTouchInput}
+                  />
+                  <MobileFlightButton
+                    label="Evade R"
+                    className="is-compact"
+                    icon={<RotateCcw className="mobile-flip-icon" />}
+                    pressInput={{ rollRight: true }}
+                    setTouchInput={setTouchInput}
+                  />
+                </div>
+              </>
+            )}
           </div>
         </div>
       ) : null}
@@ -3346,7 +3391,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
             </div>
           </div>
 
-          <div className="pointer-events-none order-1 flex min-h-[170px] items-end justify-center lg:order-2">
+          <div className="pointer-events-none hud-action-slot order-1 flex min-h-[170px] items-end justify-center lg:order-2">
             {nearbyWeaponOffer && offeredWeapon ? (
               <div className="pointer-events-auto weapon-shop-bubble">
                 <div className="weapon-shop-icon">
@@ -3381,8 +3426,9 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
                 onClick={() => bridgeRef.current?.dockCurrent()}
               >
                 <Target className="h-4 w-4" />
-                Dock with {nearby.name}
-                <span>E</span>
+                <span className="dock-button-text dock-button-text-full">Dock with {nearby.name}</span>
+                <span className="dock-button-text dock-button-text-short">Visit planet</span>
+                <span className="dock-button-key">E</span>
               </button>
             ) : dockedService ? (
               <div className="flight-status-pill pointer-events-none hidden rounded-full border border-orbit/30 bg-void/45 px-4 py-2 font-display text-xs uppercase text-parchment/70 backdrop-blur-md md:block">
@@ -3546,6 +3592,42 @@ function MobileFlightButton({
       onPointerUp={release}
       onPointerCancel={release}
       onPointerLeave={release}
+      onContextMenu={(event) => event.preventDefault()}
+    >
+      <span className="mobile-control-icon">{icon}</span>
+      <span>{label}</span>
+    </button>
+  );
+}
+
+function MobileActionButton({
+  className = "",
+  icon,
+  label,
+  onClick
+}: {
+  className?: string;
+  icon: React.ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
+  const stopTouch = (event: React.PointerEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+  };
+
+  return (
+    <button
+      className={`mobile-control-button ${className}`}
+      type="button"
+      aria-label={label}
+      title={label}
+      onPointerDown={stopTouch}
+      onPointerUp={stopTouch}
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onClick();
+      }}
       onContextMenu={(event) => event.preventDefault()}
     >
       <span className="mobile-control-icon">{icon}</span>
