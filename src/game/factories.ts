@@ -100,6 +100,10 @@ let plasmaAssets: PlasmaAssets | null = null;
 let enemyBugAssets: EnemyBugAssets | null = null;
 let deathStarAssets: DeathStarAssets | null = null;
 
+const explosionTexture = markShared(createRadialTexture("rgba(255,207,101,1)", "rgba(215,71,33,0)", 0.8));
+const explosionRingGeometry = markShared(new THREE.RingGeometry(0.55, 1.0, 48));
+const explosionCoreGeometry = markShared(new THREE.SphereGeometry(0.36, 16, 10));
+
 const getPlayerBoltAssets = () => {
   if (!playerBoltAssets) {
     playerBoltAssets = {
@@ -753,7 +757,7 @@ export const createExplosion = (
   group.position.copy(position);
   const velocity: THREE.Vector3[] = [];
   const material = new THREE.SpriteMaterial({
-    map: createRadialTexture("rgba(255,207,101,1)", "rgba(215,71,33,0)", 0.8),
+    map: explosionTexture,
     color,
     transparent: true,
     opacity: 0.9,
@@ -762,7 +766,7 @@ export const createExplosion = (
   });
 
   for (let i = 0; i < particleCount; i += 1) {
-    const sprite = new THREE.Sprite(material.clone());
+    const sprite = new THREE.Sprite(material);
     const angle = (i / particleCount) * Math.PI * 2;
     const height = ((i % 5) - 2) * 0.18;
     const speed = (2.5 + (i % 7) * 0.55) * scale;
@@ -773,7 +777,7 @@ export const createExplosion = (
   }
 
   const shockwave = new THREE.Mesh(
-    new THREE.RingGeometry(0.55 * scale, 1.0 * scale, 96),
+    explosionRingGeometry,
     new THREE.MeshBasicMaterial({
       color,
       transparent: true,
@@ -784,11 +788,12 @@ export const createExplosion = (
     })
   );
   shockwave.rotation.x = Math.PI / 2;
+  shockwave.scale.setScalar(scale);
   group.add(shockwave);
   velocity.push(new THREE.Vector3());
 
   const coreFlash = new THREE.Mesh(
-    new THREE.SphereGeometry(0.36 * scale, 24, 16),
+    explosionCoreGeometry,
     new THREE.MeshBasicMaterial({
       color,
       transparent: true,
@@ -797,6 +802,7 @@ export const createExplosion = (
       blending: THREE.AdditiveBlending
     })
   );
+  coreFlash.scale.setScalar(scale);
   group.add(coreFlash);
   velocity.push(new THREE.Vector3());
 
@@ -814,19 +820,25 @@ export const createExplosion = (
 };
 
 export const disposeObject = (object: THREE.Object3D) => {
+  const disposedGeometries = new Set<THREE.BufferGeometry>();
+  const disposedMaterials = new Set<THREE.Material>();
+
   object.traverse((entry) => {
     if (entry instanceof THREE.Mesh || entry instanceof THREE.Points || entry instanceof THREE.Line || entry instanceof THREE.Sprite) {
-      if (!isShared(entry.geometry)) {
+      if (entry.geometry && !isShared(entry.geometry) && !disposedGeometries.has(entry.geometry)) {
+        disposedGeometries.add(entry.geometry);
         entry.geometry?.dispose();
       }
       const material = entry.material;
       if (Array.isArray(material)) {
         material.forEach((item) => {
-          if (!isShared(item)) {
+          if (!isShared(item) && !disposedMaterials.has(item)) {
+            disposedMaterials.add(item);
             item.dispose();
           }
         });
-      } else if (!isShared(material)) {
+      } else if (material && !isShared(material) && !disposedMaterials.has(material)) {
+        disposedMaterials.add(material);
         material?.dispose();
       }
     }

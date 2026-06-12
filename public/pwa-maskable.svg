@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Pirxey Space">
+  <defs>
+    <radialGradient id="space" cx="50%" cy="42%" r="74%">
+      <stop offset="0%" stop-color="#1d2b5e"/>
+      <stop offset="54%" stop-color="#080817"/>
+      <stop offset="100%" stop-color="#020208"/>
+    </radialGradient>
+    <linearGradient id="ship" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="48%" stop-color="#91e4f3"/>
+      <stop offset="100%" stop-color="#29455d"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#space)"/>
+  <circle cx="376" cy="138" r="56" fill="#17315f" stroke="#7dffea" stroke-width="5"/>
+  <circle cx="118" cy="116" r="5" fill="#ffffff" opacity=".75"/>
+  <circle cx="428" cy="315" r="4" fill="#bffaff" opacity=".86"/>
+  <circle cx="168" cy="404" r="4" fill="#ffffff" opacity=".7"/>
+  <path d="M111 360c67-102 150-170 290-218-48 136-118 220-220 293l-18-73-52-2z" fill="url(#ship)" stroke="#dcfbff" stroke-width="8" stroke-linejoin="round"/>
+  <path d="M166 360l-62 75 91-28z" fill="#ffcf65"/>
+  <path d="M151 369l-39 50 60-20z" fill="#33f0b4" opacity=".86"/>
+  <circle cx="294" cy="247" r="26" fill="#04121a" stroke="#7dffea" stroke-width="9"/>
+  <path d="M76 246c89-22 176-22 259-4" fill="none" stroke="#7dffea" stroke-width="8" stroke-linecap="round" opacity=".82"/>
+</svg>

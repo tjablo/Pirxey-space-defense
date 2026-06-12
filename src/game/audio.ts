@@ -9,6 +9,8 @@ export type GameAudio = {
   missile: () => void;
   planetExplosion: () => void;
   plasma: () => void;
+  preload: () => void;
+  primeSoundtrack: (tracks: string[]) => void;
   resume: () => void;
   setMuted: (muted: boolean) => void;
   shoot: () => void;
@@ -23,6 +25,8 @@ export const createGameAudio = (): GameAudio => {
   let soundtrack: HTMLAudioElement | null = null;
   let playlist: string[] = [];
   let trackIndex = 0;
+  let soundtrackPreloads: HTMLAudioElement[] = [];
+  let soundtrackPreloadUrls: string[] = [];
   let laserShotBuffer: AudioBuffer | null = null;
   let laserShotLoad: Promise<AudioBuffer | null> | null = null;
   let enemyExplosionBuffer: AudioBuffer | null = null;
@@ -291,6 +295,32 @@ export const createGameAudio = (): GameAudio => {
     });
   };
 
+  const preloadEffects = () => {
+    void loadLaserShot();
+    void loadEnemyExplosion();
+    void loadMissileLaunch();
+    void loadFusionFlash();
+  };
+
+  const preloadSoundtrack = (tracks: string[]) => {
+    const uniqueTracks = [...new Set(tracks)].slice(0, 3);
+    if (
+      soundtrackPreloadUrls.length === uniqueTracks.length &&
+      soundtrackPreloadUrls.every((track, index) => track === uniqueTracks[index])
+    ) {
+      return;
+    }
+
+    soundtrackPreloadUrls = uniqueTracks;
+    soundtrackPreloads = uniqueTracks.map((track) => {
+      const audio = new Audio();
+      audio.preload = "auto";
+      audio.src = track;
+      audio.load();
+      return audio;
+    });
+  };
+
   return {
     explosion: () => {
       playEnemyExplosion();
@@ -306,12 +336,15 @@ export const createGameAudio = (): GameAudio => {
     plasma: () => {
       playFusionFlash();
     },
+    preload: () => {
+      preloadEffects();
+    },
+    primeSoundtrack: (tracks: string[]) => {
+      preloadSoundtrack(tracks);
+    },
     resume: () => {
       void getContext().resume();
-      void loadLaserShot();
-      void loadEnemyExplosion();
-      void loadMissileLaunch();
-      void loadFusionFlash();
+      preloadEffects();
     },
     setMuted: (nextMuted: boolean) => {
       muted = nextMuted;

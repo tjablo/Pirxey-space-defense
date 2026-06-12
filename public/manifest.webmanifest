@@ -1,0 +1,27 @@
+{
+  "name": "Pirxey Space Defense",
+  "short_name": "Pirxey Space",
+  "description": "A 3D space defense prototype for exploring Pirxey services and protecting service planets.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "fullscreen"],
+  "orientation": "any",
+  "theme_color": "#060411",
+  "background_color": "#060411",
+  "categories": ["games", "business", "productivity"],
+  "icons": [
+    {
+      "src": "/pwa-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-maskable.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

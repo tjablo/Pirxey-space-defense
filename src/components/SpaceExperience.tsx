@@ -725,6 +725,30 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
   }, [audioMuted]);
 
   useEffect(() => {
+    const preloadAudio = () => {
+      audioRef.current.preload();
+      audioRef.current.primeSoundtrack(SOUNDTRACK_URLS);
+    };
+    const idleWindow = window as Window & {
+      cancelIdleCallback?: (handle: number) => void;
+      requestIdleCallback?: (callback: IdleRequestCallback, options?: IdleRequestOptions) => number;
+    };
+
+    if (idleWindow.requestIdleCallback) {
+      const idleId = idleWindow.requestIdleCallback(preloadAudio, { timeout: 2200 });
+      return () => {
+        idleWindow.cancelIdleCallback?.(idleId);
+      };
+    }
+
+    const timeoutId = window.setTimeout(preloadAudio, 900);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!isBattleStarted) {
       audioRef.current.stopSoundtrack();
     }
@@ -841,6 +865,8 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
   }, [buyOrEquipWeapon]);
 
   const startBattleAudio = useCallback(() => {
+    audioRef.current.preload();
+    audioRef.current.primeSoundtrack(SOUNDTRACK_URLS);
     audioRef.current.resume();
     audioRef.current.setMuted(audioMuted);
     audioRef.current.startSoundtrack(SOUNDTRACK_URLS);
@@ -1540,25 +1566,36 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       addExplosion(
         blastOrigin,
         projectile.impactColor ?? 0x7dffea,
-        isPlasma ? 64 : 34,
+        isPlasma ? 64 : 22,
         isPlasma ? 3.25 : radius ? radius * 0.34 : 0.9
       );
       if (isHomingMissile) {
-        const missileTargets = enemies
-          .map((enemy) => ({
-            distance: enemy.group.position.distanceTo(blastOrigin),
-            enemy
-          }))
-          .filter(({ distance, enemy }) => distance <= radius + enemy.hitRadius)
-          .sort((a, b) => a.distance - b.distance)
-          .slice(0, 2);
+        let nearestEnemy: EnemyRuntime | null = null;
+        let nearestDistance = Number.POSITIVE_INFINITY;
+        let secondEnemy: EnemyRuntime | null = null;
+        let secondDistance = Number.POSITIVE_INFINITY;
 
-        for (const { distance, enemy } of missileTargets) {
-          const secondTarget = missileTargets[0]?.enemy.id !== enemy.id;
-          if (secondTarget && distance > 1.55 + enemy.hitRadius * 0.35) {
+        for (const enemy of enemies) {
+          const distance = enemy.group.position.distanceTo(blastOrigin);
+          if (distance > radius + enemy.hitRadius) {
             continue;
           }
-          damageEnemy(enemy, projectile.damage, blastOrigin);
+          if (distance < nearestDistance) {
+            secondEnemy = nearestEnemy;
+            secondDistance = nearestDistance;
+            nearestEnemy = enemy;
+            nearestDistance = distance;
+          } else if (distance < secondDistance) {
+            secondEnemy = enemy;
+            secondDistance = distance;
+          }
+        }
+
+        if (nearestEnemy) {
+          damageEnemy(nearestEnemy, projectile.damage, blastOrigin);
+        }
+        if (secondEnemy && secondDistance <= 1.55 + secondEnemy.hitRadius * 0.35) {
+          damageEnemy(secondEnemy, projectile.damage, blastOrigin);
         }
         removeProjectile(projectile);
         return;
