@@ -1,4 +1,7 @@
 import {
+  ChevronLeft,
+  ChevronRight,
+  ChevronsUp,
   Coins,
   Compass,
   Crosshair,
@@ -70,6 +73,30 @@ type NearbyService = {
 
 type CameraMode = "Drag aim" | "Mouse aim";
 
+type TouchFlightInput = {
+  ascend: boolean;
+  boost: boolean;
+  brake: boolean;
+  descend: boolean;
+  pitchDown: boolean;
+  pitchUp: boolean;
+  primaryFire: boolean;
+  rollLeft: boolean;
+  rollRight: boolean;
+  secondaryFire: boolean;
+  thrust: boolean;
+  yawLeft: boolean;
+  yawRight: boolean;
+};
+
+type FullscreenDocument = Document & {
+  webkitFullscreenElement?: Element | null;
+};
+
+type FullscreenElement = HTMLElement & {
+  webkitRequestFullscreen?: () => Promise<void> | void;
+};
+
 type PlanetHudItem = {
   id: string;
   name: string;
@@ -115,6 +142,22 @@ declare global {
 }
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+
+const createTouchFlightInput = (): TouchFlightInput => ({
+  ascend: false,
+  boost: false,
+  brake: false,
+  descend: false,
+  pitchDown: false,
+  pitchUp: false,
+  primaryFire: false,
+  rollLeft: false,
+  rollRight: false,
+  secondaryFire: false,
+  thrust: false,
+  yawLeft: false,
+  yawRight: false
+});
 
 const randomFromSeed = (seed: number) => {
   let t = seed + 0x6d2b79f5;
@@ -482,6 +525,25 @@ const formatDistance = (value: number | null) => {
   return `${Math.max(0, value).toFixed(1)} au`;
 };
 
+const PLANET_CODES: Record<string, string> = {
+  "ai-native": "AI",
+  backend: "BE",
+  cloud: "CD",
+  crypto: "BC",
+  "custom-ai": "CA",
+  frontend: "FE",
+  "rapid-ai": "RA"
+};
+
+const getPlanetCode = (planet: PlanetHudItem) =>
+  PLANET_CODES[planet.id] ??
+  planet.name
+    .split(/[^a-zA-Z0-9]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("");
+
 const PLAYER_MAX_HEALTH = 100;
 const WEAPON_SHOP_DISTANCE = 7.4;
 
@@ -515,6 +577,7 @@ const createCombatHudState = (phase: CombatHud["phase"]): CombatHud => ({
 });
 
 export function SpaceExperience({ services }: SpaceExperienceProps) {
+  const shellRef = useRef<HTMLElement | null>(null);
   const mountRef = useRef<HTMLDivElement | null>(null);
   const bridgeRef = useRef<SceneBridge | null>(null);
   const selectedIdRef = useRef(services[0]?.id ?? "");
@@ -559,6 +622,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
   const phaseBeforePauseRef = useRef<CombatHud["phase"]>("Running");
   const audioRef = useRef(createGameAudio());
   const [audioMuted, setAudioMuted] = useState(() => audioRef.current.isMuted());
+  const touchInputRef = useRef<TouchFlightInput>(createTouchFlightInput());
 
   useEffect(() => {
     gamePhaseRef.current = gamePhase;
@@ -578,6 +642,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     setNearby(null);
     setCameraMode("Drag aim");
     setShowDestinations(false);
+    touchInputRef.current = createTouchFlightInput();
     setShipHealth(PLAYER_MAX_HEALTH);
     creditsRef.current = 0;
     setCredits(0);
@@ -671,6 +736,39 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     }
   }, [canUseNavigation]);
 
+  useEffect(() => {
+    const preventGameBrowserEvent = (event: Event) => {
+      const target = event.target;
+      if (!(target instanceof Node) || !shellRef.current?.contains(target)) {
+        return;
+      }
+      event.preventDefault();
+    };
+    const listenerOptions: AddEventListenerOptions = { passive: false };
+    const documentEvents = ["contextmenu", "selectstart", "dragstart", "copy", "cut", "dblclick"] as const;
+    const windowEvents = ["gesturestart", "gesturechange", "gestureend"] as const;
+
+    documentEvents.forEach((eventName) => {
+      document.addEventListener(eventName, preventGameBrowserEvent, listenerOptions);
+    });
+    windowEvents.forEach((eventName) => {
+      window.addEventListener(eventName, preventGameBrowserEvent, listenerOptions);
+    });
+
+    return () => {
+      documentEvents.forEach((eventName) => {
+        document.removeEventListener(eventName, preventGameBrowserEvent, listenerOptions);
+      });
+      windowEvents.forEach((eventName) => {
+        window.removeEventListener(eventName, preventGameBrowserEvent, listenerOptions);
+      });
+    };
+  }, []);
+
+  const setTouchInput = useCallback((patch: Partial<TouchFlightInput>) => {
+    Object.assign(touchInputRef.current, patch);
+  }, []);
+
   const selectTarget = useCallback(
     (id: string) => {
       if (destroyedPlanetIds.includes(id) || !canUseNavigation) {
@@ -748,25 +846,53 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     audioRef.current.startSoundtrack(SOUNDTRACK_URLS);
   }, [audioMuted]);
 
+  const requestMobileFullscreen = useCallback(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const isMobileGameSurface = window.matchMedia("(max-width: 920px), (hover: none) and (pointer: coarse)").matches;
+    if (!isMobileGameSurface) {
+      return;
+    }
+
+    const fullscreenDocument = document as FullscreenDocument;
+    if (document.fullscreenElement || fullscreenDocument.webkitFullscreenElement) {
+      return;
+    }
+
+    const target = (shellRef.current ?? document.documentElement) as FullscreenElement;
+    const requestFullscreen = target.requestFullscreen ?? target.webkitRequestFullscreen;
+    if (!requestFullscreen) {
+      return;
+    }
+
+    void Promise.resolve(requestFullscreen.call(target)).catch(() => undefined);
+  }, []);
+
   const startGame = useCallback(() => {
+    requestMobileFullscreen();
     startBattleAudio();
     gamePhaseRef.current = "Countdown";
     setGamePhase("Countdown");
-  }, [startBattleAudio]);
+  }, [requestMobileFullscreen, startBattleAudio]);
 
   const restartMatch = useCallback(() => {
+    requestMobileFullscreen();
     startBattleAudio();
     setInitialMatchPhase("Countdown");
     setMatchId((value) => value + 1);
-  }, [startBattleAudio]);
+  }, [requestMobileFullscreen, startBattleAudio]);
 
   const enterExploreMode = useCallback(() => {
+    requestMobileFullscreen();
     audioRef.current.stopSoundtrack();
     setInitialMatchPhase("Exploring");
     setMatchId((value) => value + 1);
-  }, []);
+  }, [requestMobileFullscreen]);
 
   const startDefenseFromExplore = useCallback(() => {
+    requestMobileFullscreen();
     startBattleAudio();
     gamePhaseRef.current = "Countdown";
     setShowDestinations(false);
@@ -777,7 +903,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       threat: "Next round"
     }));
     setGamePhase("Countdown");
-  }, [startBattleAudio]);
+  }, [requestMobileFullscreen, startBattleAudio]);
 
   const toggleAudioMuted = useCallback(() => {
     setAudioMuted((current) => {
@@ -1909,6 +2035,12 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     let secondaryFireHeld = false;
     let lastX = 0;
     let lastY = 0;
+    let touchHoldFireTimeout: number | null = null;
+    let touchHoldStartAt = 0;
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let touchDragArmed = false;
+    let touchFirePointerId: number | null = null;
     let pointerLocked = false;
 
     const applyLookInput = (dx: number, dy: number, multiplier = 1) => {
@@ -1936,6 +2068,25 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       void renderer.domElement.requestPointerLock();
     };
 
+    const clearTouchHoldFire = () => {
+      if (touchHoldFireTimeout !== null) {
+        window.clearTimeout(touchHoldFireTimeout);
+        touchHoldFireTimeout = null;
+      }
+      touchDragArmed = false;
+      touchFirePointerId = null;
+    };
+
+    const startTouchHoldFire = (pointerId: number) => {
+      if (gamePhaseRef.current === "Game over" || shipDestroyed || dockedTarget.active) {
+        return;
+      }
+      pointerFireHeld = true;
+      touchFirePointerId = pointerId;
+      touchHoldFireTimeout = null;
+      firePlayerShot();
+    };
+
     const onPointerDown = (event: PointerEvent) => {
       if (event.button === 2) {
         event.preventDefault();
@@ -1946,8 +2097,16 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       if (event.button !== 0) {
         return;
       }
-      pointerFireHeld = true;
-      firePlayerShot();
+      const isTouchPointer = event.pointerType === "touch";
+      if (!isTouchPointer) {
+        pointerFireHeld = true;
+        firePlayerShot();
+      } else {
+        clearTouchHoldFire();
+        touchHoldStartAt = performance.now();
+        touchStartX = event.clientX;
+        touchStartY = event.clientY;
+      }
       if (pointerLocked || gamePhaseRef.current === "Game over" || shipDestroyed || dockedTarget.active) {
         return;
       }
@@ -1974,6 +2133,20 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
         dragging = false;
         return;
       }
+      if (event.pointerType === "touch" && event.pointerId !== touchFirePointerId) {
+        const dragDistance = Math.hypot(event.clientX - touchStartX, event.clientY - touchStartY);
+        if (dragDistance > 10 && !touchDragArmed) {
+          touchDragArmed = true;
+          const pointerId = event.pointerId;
+          const remainingHold = Math.max(0, 280 - (performance.now() - touchHoldStartAt));
+          touchHoldFireTimeout = window.setTimeout(() => {
+            touchHoldFireTimeout = null;
+            if (dragging && touchDragArmed) {
+              startTouchHoldFire(pointerId);
+            }
+          }, remainingHold);
+        }
+      }
       const dx = event.clientX - lastX;
       const dy = event.clientY - lastY;
       lastX = event.clientX;
@@ -1983,8 +2156,9 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
 
     const onPointerUp = (event: PointerEvent) => {
       const releaseAll = event.type === "pointerleave" || event.type === "pointercancel";
-      if (releaseAll || event.button === 0) {
+      if (releaseAll || event.button === 0 || event.pointerId === touchFirePointerId) {
         pointerFireHeld = false;
+        clearTouchHoldFire();
       }
       if (releaseAll || event.button === 2) {
         secondaryFireHeld = false;
@@ -2003,6 +2177,8 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       keys.clear();
       pointerFireHeld = false;
       secondaryFireHeld = false;
+      clearTouchHoldFire();
+      touchInputRef.current = createTouchFlightInput();
       dragging = false;
     };
 
@@ -2056,10 +2232,11 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       dust.rotation.y += delta * 0.004;
       fireCooldown = Math.max(0, fireCooldown - delta);
       secondaryFireCooldown = Math.max(0, secondaryFireCooldown - delta);
-      if (keys.has("KeyF") || pointerFireHeld) {
+      const touchInput = touchInputRef.current;
+      if (keys.has("KeyF") || pointerFireHeld || touchInput.primaryFire) {
         firePlayerShot();
       }
-      if (keys.has("KeyG") || secondaryFireHeld) {
+      if (keys.has("KeyG") || secondaryFireHeld || touchInput.secondaryFire) {
         fireSecondaryWeapon();
       }
       shipHitFlash = Math.max(0, shipHitFlash - delta);
@@ -2213,9 +2390,12 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
         }
       }
 
-      const boostPressed = keys.has("ShiftLeft") || keys.has("ShiftRight");
+      const boostPressed = keys.has("ShiftLeft") || keys.has("ShiftRight") || touchInput.boost;
       const manualThrusting =
-        !dockedTarget.active && !autopilotTarget.active && !shipDestroyed && keys.has("KeyW");
+        !dockedTarget.active &&
+        !autopilotTarget.active &&
+        !shipDestroyed &&
+        (keys.has("KeyW") || touchInput.thrust || touchInput.boost);
       let dodgeInput = 0;
 
       if (dockedTarget.active) {
@@ -2263,9 +2443,30 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
           }
         }
       } else {
-        const yaw = (keys.has("KeyA") ? 1 : 0) - (keys.has("KeyD") ? 1 : 0);
-        const pitch = (keys.has("ArrowDown") ? 1 : 0) - (keys.has("ArrowUp") ? 1 : 0);
-        const roll = (keys.has("KeyQ") ? 1 : 0) - (keys.has("KeyE") ? 1 : 0);
+        const yaw = clamp(
+          (keys.has("KeyA") ? 1 : 0) -
+            (keys.has("KeyD") ? 1 : 0) +
+            (touchInput.yawLeft ? 1 : 0) -
+            (touchInput.yawRight ? 1 : 0),
+          -1,
+          1
+        );
+        const pitch = clamp(
+          (keys.has("ArrowDown") ? 1 : 0) -
+            (keys.has("ArrowUp") ? 1 : 0) +
+            (touchInput.pitchDown ? 1 : 0) -
+            (touchInput.pitchUp ? 1 : 0),
+          -1,
+          1
+        );
+        const roll = clamp(
+          (keys.has("KeyQ") ? 1 : 0) -
+            (keys.has("KeyE") ? 1 : 0) +
+            (touchInput.rollLeft ? 1 : 0) -
+            (touchInput.rollRight ? 1 : 0),
+          -1,
+          1
+        );
         dodgeInput = roll;
         ship.rotation.y += yaw * delta * 1.42;
         ship.rotation.x = clamp(ship.rotation.x + pitch * delta * 1.05, -0.98, 0.98);
@@ -2281,13 +2482,13 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
         if (thrust > 0) {
           velocity.addScaledVector(forward, thrust * delta);
         }
-        if (keys.has("KeyS")) {
+        if (keys.has("KeyS") || touchInput.brake) {
           velocity.multiplyScalar(1 - delta * 2.7);
         }
-        if (keys.has("Space")) {
+        if (keys.has("Space") || touchInput.ascend) {
           velocity.y += 9.5 * delta;
         }
-        if (keys.has("KeyC")) {
+        if (keys.has("KeyC") || touchInput.descend) {
           velocity.y -= 9.5 * delta;
         }
       }
@@ -2584,6 +2785,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
 
     return () => {
       window.cancelAnimationFrame(frameId);
+      clearTouchHoldFire();
       resizeObserver.disconnect();
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
@@ -2634,31 +2836,33 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     Boolean(offeredWeapon) && offeredWeaponCapacity !== null && offeredWeaponAmmo < offeredWeaponCapacity;
   const offeredWeaponNeedsPayment = Boolean(offeredWeapon) && (!offeredWeaponOwned || offeredWeaponNeedsReload);
   const offeredWeaponAffordable = offeredWeapon ? !offeredWeaponNeedsPayment || credits >= offeredWeapon.price : false;
-  const offeredWeaponMissing =
-    offeredWeapon && offeredWeaponNeedsPayment ? Math.max(0, offeredWeapon.price - credits) : 0;
   const offeredWeaponAmmoStatus =
     offeredWeaponCapacity === null
       ? "Ammo INF"
       : `Ammo ${Math.max(0, Math.floor(offeredWeaponAmmo))}/${offeredWeaponCapacity}`;
   const offeredWeaponAction = !offeredWeaponOwned
-    ? `Buy ${offeredWeapon?.price} cr`
+    ? "Buy"
     : offeredWeaponNeedsReload
-      ? `Reload ${offeredWeapon?.price} cr`
+      ? "Reload"
       : offeredWeaponEquipped
         ? "Equipped"
-        : `Equip ${offeredWeapon?.slot}`;
-  const offeredWeaponStatus = offeredWeaponNeedsPayment
-    ? offeredWeaponAffordable
-      ? offeredWeaponOwned
-        ? "Ready to reload"
-        : "Ready to buy"
-      : `Missing ${offeredWeaponMissing} cr`
-    : offeredWeaponEquipped
-      ? "Installed"
-      : "Loaded";
+        : "Equip";
+  const offeredWeaponStatus = offeredWeaponEquipped
+    ? "Equipped"
+    : offeredWeaponOwned
+      ? offeredWeaponNeedsReload
+        ? "Reload"
+        : "Owned"
+      : "New";
+  const offeredWeaponPriceLabel = offeredWeapon ? `${offeredWeapon.price} cr` : "";
 
   return (
-    <main className={`relative h-screen w-screen overflow-hidden bg-void text-parchment ${dockedService ? "is-docked" : ""}`}>
+    <main
+      ref={shellRef}
+      className={`space-game-shell relative w-screen overflow-hidden bg-void text-parchment ${dockedService ? "is-docked" : ""} ${
+        isBattleStarted || gamePhase === "Game over" ? "is-battle-active" : ""
+      }`}
+    >
       <div
         ref={mountRef}
         className={`absolute inset-0 ${
@@ -2673,14 +2877,102 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       {isBattleStarted && !dockedService ? (
         <div className="pointer-events-none ammo-strip" aria-hidden="true">
           <div className="ammo-strip-card">
-            <span>Primary</span>
+            <span>
+              <span className="ammo-label-full">Primary</span>
+              <span className="ammo-label-short">PRI</span>
+            </span>
             <strong>{primaryAmmoLabel}</strong>
             <em>{activePrimaryWeapon.name}</em>
           </div>
           <div className="ammo-strip-card">
-            <span>Secondary</span>
+            <span>
+              <span className="ammo-label-full">Secondary</span>
+              <span className="ammo-label-short">SEC</span>
+            </span>
             <strong>{secondaryAmmoLabel}</strong>
             <em>{activeSecondaryWeapon?.name ?? "Empty"}</em>
+          </div>
+        </div>
+      ) : null}
+
+      {!dockedService && gamePhase !== "Awaiting" && gamePhase !== "Game over" ? (
+        <div className="mobile-flight-controls" aria-label="Touch flight controls">
+          <div className="mobile-control-cluster mobile-control-cluster-left mobile-throttle-cluster">
+            <MobileFlightButton
+              label="Boost"
+              className="is-compact is-boost"
+              icon={<ChevronsUp />}
+              pressInput={{ boost: true }}
+              setTouchInput={setTouchInput}
+            />
+            <div className="mobile-throttle-row" aria-label="Touch thrust and yaw">
+              <MobileFlightButton
+                label="Yaw"
+                ariaLabel="Yaw left"
+                className="is-icon-only"
+                icon={<ChevronLeft />}
+                pressInput={{ yawLeft: true }}
+                setTouchInput={setTouchInput}
+              />
+              <MobileFlightButton
+                label="Thrust"
+                className="is-thrust"
+                icon={<Rocket />}
+                pressInput={{ thrust: true }}
+                setTouchInput={setTouchInput}
+              />
+              <MobileFlightButton
+                label="Yaw"
+                ariaLabel="Yaw right"
+                className="is-icon-only"
+                icon={<ChevronRight />}
+                pressInput={{ yawRight: true }}
+                setTouchInput={setTouchInput}
+              />
+            </div>
+            <MobileFlightButton
+              label="Brake"
+              className="is-compact is-brake"
+              icon={<Gauge />}
+              pressInput={{ brake: true }}
+              setTouchInput={setTouchInput}
+            />
+          </div>
+
+          <div className="mobile-control-cluster mobile-control-cluster-right">
+            <div className="mobile-fire-row">
+              <MobileFlightButton
+                label="Fire"
+                className="is-fire"
+                icon={<Crosshair />}
+                pressInput={{ primaryFire: true }}
+                setTouchInput={setTouchInput}
+              />
+              <MobileFlightButton
+                label="Alt"
+                className="is-alt-fire"
+                ariaLabel="Fire secondary weapon"
+                icon={<Zap />}
+                pressInput={{ secondaryFire: true }}
+                setTouchInput={setTouchInput}
+              />
+            </div>
+            <div className="mobile-control-row">
+              <MobileFlightButton
+                label="Evade L"
+                className="is-compact"
+                icon={<RotateCcw />}
+                pressInput={{ rollLeft: true }}
+                setTouchInput={setTouchInput}
+              />
+              <MobileFlightButton
+                label="Evade R"
+                className="is-compact"
+                icon={<RotateCcw className="mobile-flip-icon" />}
+                pressInput={{ rollRight: true }}
+                setTouchInput={setTouchInput}
+              />
+            </div>
           </div>
         </div>
       ) : null}
@@ -2717,8 +3009,8 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       ) : null}
 
       {gamePhase === "Awaiting" ? (
-        <section className="invasion-toast" aria-label="Alien invasion alert">
-          <p>Alien lifeforms are beginning their invasion. Will you help defend the Pirxey planets?</p>
+        <section className="invasion-toast is-invitation" aria-label="Space bugs invasion alert">
+          <p>The space bugs invasion is starting. Will you help defend the Pirxey planets?</p>
           <div className="invasion-actions">
             <button type="button" onClick={startGame}>
               Yes, launch
@@ -2734,8 +3026,12 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
         <div className="pointer-events-none planet-roster" aria-hidden="true">
           {planetHud.map((planet) => (
             <div key={planet.id} className={`planet-status ${planet.destroyed ? "is-destroyed" : ""}`}>
-              <span>{planet.name}</span>
-              <strong>{planet.destroyed ? "Lost" : `${planet.health}%`}</strong>
+              <span className="planet-status-name">{planet.name}</span>
+              <strong className="planet-status-value">{planet.destroyed ? "Lost" : `${planet.health}%`}</strong>
+              <span className="planet-status-compact">
+                <em>{getPlanetCode(planet)}</em>
+                <strong>{planet.destroyed ? "Lost" : `${planet.health}%`}</strong>
+              </span>
               <i>
                 <b style={{ width: `${planet.destroyed ? 0 : planet.health}%` }} />
               </i>
@@ -2746,50 +3042,71 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
 
       {showCombatHud ? (
         <div className="pointer-events-none combat-hud" aria-hidden="true">
-          <div className="combat-card">
-            <span>Wave</span>
+          <div className="combat-card combat-card-wave">
+            <span className="combat-label">
+              <span className="combat-label-full">Wave</span>
+              <span className="combat-label-short">W</span>
+            </span>
             <strong>{combatHud.wave}</strong>
           </div>
-          <div className="combat-card">
-            <span>Hostiles</span>
+          <div className="combat-card combat-card-hostiles">
+            <span className="combat-label">
+              <span className="combat-label-full">Hostiles</span>
+              <span className="combat-label-short">HST</span>
+            </span>
             <strong>{combatHud.enemies}</strong>
           </div>
-          <div className="combat-card combat-card-wide">
-            <span>Ship HP</span>
+          <div className="combat-card combat-card-wide combat-card-ship">
+            <span className="combat-label">
+              <span className="combat-label-full">Ship HP</span>
+              <span className="combat-label-short">HP</span>
+            </span>
             <strong>{shipHealth}%</strong>
             <div className="ship-health">
               <i style={{ width: `${shipHealth}%` }} />
             </div>
           </div>
-          <div className="combat-card combat-card-wide">
-            <span>Defend {combatHud.threat}</span>
+          <div className="combat-card combat-card-wide combat-card-planet">
+            <span className="combat-label">
+              <span className="combat-label-full">Defend {combatHud.threat}</span>
+              <span className="combat-label-short">DEF</span>
+            </span>
             <strong>{combatHud.planetHealth}%</strong>
             <div className="planet-health">
               <i style={{ width: `${combatHud.planetHealth}%` }} />
             </div>
           </div>
-          <div className="combat-card">
-            <span>Score</span>
+          <div className="combat-card combat-card-score">
+            <span className="combat-label">
+              <span className="combat-label-full">Score</span>
+              <span className="combat-label-short">SC</span>
+            </span>
             <strong>{combatHud.score}</strong>
           </div>
-          <div className="combat-card">
-            <span>Credits</span>
+          <div className="combat-card combat-card-credits">
+            <span className="combat-label">
+              <span className="combat-label-full">Credits</span>
+              <span className="combat-label-short">CR</span>
+            </span>
             <strong>{credits}</strong>
           </div>
-          <div className="combat-card">
-            <span>State</span>
+          <div className="combat-card combat-card-state">
+            <span className="combat-label">
+              <span className="combat-label-full">State</span>
+              <span className="combat-label-short">ST</span>
+            </span>
             <strong>{gamePhase}</strong>
           </div>
         </div>
       ) : null}
 
-      <div className="pointer-events-none absolute inset-0 z-10 flex flex-col justify-between p-4 sm:p-6">
+      <div className="game-ui-layer pointer-events-none absolute inset-0 z-10 flex flex-col justify-between p-4 sm:p-6">
         <header className="flex items-start justify-between gap-4">
           <div className="pointer-events-auto top-shell flex items-center gap-4">
             <div className="pirxey-mark">
               <img src="/pirxey-logo.svg" alt="Pirxey" className="pirxey-logo" />
             </div>
-            <div className="hidden min-w-0 border-l border-parchment/20 pl-4 md:block">
+            <div className="top-shell-copy hidden min-w-0 border-l border-parchment/20 pl-4 md:block">
               <p className="font-display text-xs uppercase text-parchment/55">AI-native mission map</p>
               <p className="max-w-xl font-body text-sm text-parchment/80">
                 Fly between service planets. Dock near an orbit to open the Pirxey service brief.
@@ -2808,7 +3125,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
         {!dockedService ? (
           <div className="pointer-events-auto flight-toolbar" aria-label="Flight actions">
             <button
-              className={`toolbar-button ${showControls ? "is-active" : ""}`}
+              className={`toolbar-button controls-toggle ${showControls ? "is-active" : ""}`}
               type="button"
               aria-expanded={showControls}
               onClick={() => setShowControls((value) => !value)}
@@ -2865,12 +3182,12 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
         ) : null}
 
         <section className="grid flex-1 grid-cols-1 items-end gap-4 pt-4 lg:grid-cols-[minmax(260px,340px)_1fr_minmax(280px,360px)]">
-          <div className={`pointer-events-auto hud-panel order-2 self-end lg:order-1 ${showControls ? "" : "is-hidden"}`}>
+          <div className={`pointer-events-auto hud-panel controls-panel order-2 self-end lg:order-1 ${showControls ? "" : "is-hidden"}`}>
             <div className="flex items-center gap-2 border-b border-parchment/10 pb-3">
               <Rocket className="h-4 w-4 text-ember" />
               <h1 className="font-display text-sm uppercase text-parchment">Pirxey scout controls</h1>
             </div>
-            <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+            <div className="controls-grid mt-4 grid grid-cols-2 gap-3 text-sm">
               <ControlHint icon={<Navigation />} label="W / Shift" value="thrust / boost" />
               <ControlHint icon={<Gauge />} label="S" value="brake" />
               <ControlHint icon={<Compass />} label="A / D" value="yaw" />
@@ -2962,8 +3279,10 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
                   <strong>{offeredWeapon.name}</strong>
                   <p>{offeredWeapon.description}</p>
                   <small>
-                    {offeredWeapon.slot} weapon · {offeredWeaponAmmoStatus} · Cost {offeredWeapon.price} cr · Balance {credits} cr ·{" "}
-                    {offeredWeaponStatus}
+                    <span>{offeredWeapon.slot}</span>
+                    <span>{offeredWeaponAmmoStatus}</span>
+                    <span>Price {offeredWeaponPriceLabel}</span>
+                    <span>{offeredWeaponStatus}</span>
                   </small>
                 </div>
                 <button
@@ -2988,11 +3307,11 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
                 <span>E</span>
               </button>
             ) : dockedService ? (
-              <div className="pointer-events-none hidden rounded-full border border-orbit/30 bg-void/45 px-4 py-2 font-display text-xs uppercase text-parchment/70 backdrop-blur-md md:block">
+              <div className="flight-status-pill pointer-events-none hidden rounded-full border border-orbit/30 bg-void/45 px-4 py-2 font-display text-xs uppercase text-parchment/70 backdrop-blur-md md:block">
                 Docked orbit active - camera tracking {dockedService.name}
               </div>
             ) : (
-              <div className="pointer-events-none hidden rounded-full border border-parchment/15 bg-void/35 px-4 py-2 font-display text-xs uppercase text-parchment/55 backdrop-blur-md md:block">
+              <div className="flight-status-pill pointer-events-none hidden rounded-full border border-parchment/15 bg-void/35 px-4 py-2 font-display text-xs uppercase text-parchment/55 backdrop-blur-md md:block">
                 Nearest orbit: {nearby ? `${nearby.name} - ${formatDistance(nearby.distance)}` : "scanning"}
               </div>
             )}
@@ -3096,5 +3415,63 @@ function Metric({ label, value, tone = "cool" }: { label: string; value: string;
       <span>{label}</span>
       <strong>{value}</strong>
     </div>
+  );
+}
+
+const getTouchReleasePatch = (pressInput: Partial<TouchFlightInput>) => {
+  const releaseInput: Partial<TouchFlightInput> = {};
+  for (const key of Object.keys(pressInput) as Array<keyof TouchFlightInput>) {
+    releaseInput[key] = false;
+  }
+  return releaseInput;
+};
+
+function MobileFlightButton({
+  ariaLabel,
+  className = "",
+  icon,
+  label,
+  pressInput,
+  releaseInput,
+  setTouchInput
+}: {
+  ariaLabel?: string;
+  className?: string;
+  icon: React.ReactNode;
+  label: string;
+  pressInput: Partial<TouchFlightInput>;
+  releaseInput?: Partial<TouchFlightInput>;
+  setTouchInput: (patch: Partial<TouchFlightInput>) => void;
+}) {
+  const stopTouch = (event: React.PointerEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+  };
+  const release = (event: React.PointerEvent<HTMLButtonElement>) => {
+    stopTouch(event);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    setTouchInput(releaseInput ?? getTouchReleasePatch(pressInput));
+  };
+
+  return (
+    <button
+      className={`mobile-control-button ${className}`}
+      type="button"
+      aria-label={ariaLabel ?? label}
+      onPointerDown={(event) => {
+        stopTouch(event);
+        event.currentTarget.setPointerCapture(event.pointerId);
+        setTouchInput(pressInput);
+      }}
+      onPointerUp={release}
+      onPointerCancel={release}
+      onPointerLeave={release}
+      onContextMenu={(event) => event.preventDefault()}
+    >
+      <span className="mobile-control-icon">{icon}</span>
+      <span>{label}</span>
+    </button>
   );
 }
