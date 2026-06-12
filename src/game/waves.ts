@@ -20,8 +20,8 @@ export const chooseWaveTarget = (planets: PlanetRuntime[], wave: number) => {
 
 export const createSpawnPosition = (target: THREE.Vector3, wave: number, index: number, count: number) => {
   const angle = (index / Math.max(1, count)) * Math.PI * 2 + wave * 0.73;
-  const radius = 22 + (index % 5) * 2.4 + Math.min(wave, 12) * 0.7;
-  const height = ((index % 3) - 1) * 2.7;
+  const radius = 30 + (index % 5) * 3.1 + Math.min(wave, 12) * 0.9;
+  const height = ((index % 3) - 1) * 3.1;
   return target
     .clone()
     .add(new THREE.Vector3(Math.cos(angle) * radius, height, Math.sin(angle) * radius));

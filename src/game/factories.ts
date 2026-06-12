@@ -639,6 +639,7 @@ export const createEnemyBug = (
 
   return {
     id: enemyId++,
+    attackDelay: 3 + Math.random() * 2.5,
     attackCooldown: config.attackCooldown,
     body,
     group,
@@ -722,7 +723,8 @@ export const createDeathStarBoss = (
 
   return {
     id: enemyId++,
-    attackCooldown: Math.max(1.25, config.attackCooldown * 0.55),
+    attackDelay: 0,
+    attackCooldown: Math.max(0.85, config.attackCooldown * 0.34),
     body,
     group,
     hitRadius: 2.25,

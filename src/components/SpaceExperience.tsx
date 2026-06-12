@@ -77,6 +77,8 @@ type PlanetHudItem = {
   destroyed: boolean;
 };
 
+type WeaponAmmoState = Partial<Record<WeaponId, number>>;
+
 type PlanetRuntime = {
   service: ServicePlanet;
   orbit: THREE.Object3D;
@@ -483,6 +485,25 @@ const formatDistance = (value: number | null) => {
 const PLAYER_MAX_HEALTH = 100;
 const WEAPON_SHOP_DISTANCE = 7.4;
 
+const getWeaponAmmo = (weaponId: WeaponId | null, ammo: WeaponAmmoState) => {
+  if (!weaponId) {
+    return 0;
+  }
+  const weapon = WEAPON_CATALOG[weaponId];
+  if (!weapon) {
+    return 0;
+  }
+  return weapon.ammoCapacity === null ? Number.POSITIVE_INFINITY : ammo[weaponId] ?? 0;
+};
+
+const formatWeaponAmmo = (weaponId: WeaponId | null, ammo: WeaponAmmoState) => {
+  if (!weaponId) {
+    return "0";
+  }
+  const value = getWeaponAmmo(weaponId, ammo);
+  return Number.isFinite(value) ? `${Math.max(0, Math.floor(value))}` : "INF";
+};
+
 const createCombatHudState = (phase: CombatHud["phase"]): CombatHud => ({
   enemies: 0,
   phase,
@@ -520,6 +541,8 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
   const primaryWeaponIdRef = useRef<WeaponId>(DEFAULT_PRIMARY_WEAPON);
   const [secondaryWeaponId, setSecondaryWeaponId] = useState<WeaponId | null>(null);
   const secondaryWeaponIdRef = useRef<WeaponId | null>(null);
+  const [weaponAmmo, setWeaponAmmo] = useState<WeaponAmmoState>({});
+  const weaponAmmoRef = useRef<WeaponAmmoState>({});
   const buyOrEquipWeaponRef = useRef<(weaponId: WeaponId) => void>(() => undefined);
   const [shipHealth, setShipHealth] = useState(PLAYER_MAX_HEALTH);
   const [planetHud, setPlanetHud] = useState<PlanetHudItem[]>(() =>
@@ -564,6 +587,8 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     setPrimaryWeaponId(DEFAULT_PRIMARY_WEAPON);
     secondaryWeaponIdRef.current = null;
     setSecondaryWeaponId(null);
+    weaponAmmoRef.current = {};
+    setWeaponAmmo({});
     setCombatHud(createCombatHudState(initialMatchPhase));
     gamePhaseRef.current = initialMatchPhase;
     setGamePhase(initialMatchPhase);
@@ -576,8 +601,14 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
   const ownedPrimaryWeapons = useMemo(() => getOwnedWeaponsBySlot(ownedWeaponIds, "primary"), [ownedWeaponIds]);
   const ownedSecondaryWeapons = useMemo(() => getOwnedWeaponsBySlot(ownedWeaponIds, "secondary"), [ownedWeaponIds]);
   const activeSecondaryWeapon = secondaryWeaponId ? WEAPON_CATALOG[secondaryWeaponId] : null;
+  const activePrimaryWeapon = WEAPON_CATALOG[primaryWeaponId] ?? WEAPON_CATALOG[DEFAULT_PRIMARY_WEAPON];
+  const primaryAmmoLabel = formatWeaponAmmo(primaryWeaponId, weaponAmmo);
+  const secondaryAmmoLabel = activeSecondaryWeapon ? formatWeaponAmmo(activeSecondaryWeapon.id, weaponAmmo) : "0";
   const showCombatHud =
-    gamePhase === "Running" || gamePhase === "Game over" || (gamePhase === "Paused" && combatHud.enemies > 0);
+    gamePhase === "Countdown" ||
+    gamePhase === "Running" ||
+    gamePhase === "Game over" ||
+    (gamePhase === "Paused" && combatHud.enemies > 0);
   const showPlanetRoster =
     gamePhase === "Countdown" ||
     gamePhase === "Running" ||
@@ -621,6 +652,10 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
   }, [secondaryWeaponId]);
 
   useEffect(() => {
+    weaponAmmoRef.current = weaponAmmo;
+  }, [weaponAmmo]);
+
+  useEffect(() => {
     audioRef.current.setMuted(audioMuted);
   }, [audioMuted]);
 
@@ -659,6 +694,9 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     if (!weapon || !ownedWeaponIdsRef.current.has(weaponId)) {
       return;
     }
+    if (weapon.ammoCapacity !== null && getWeaponAmmo(weaponId, weaponAmmoRef.current) <= 0) {
+      return;
+    }
     if (weapon.slot === "primary") {
       primaryWeaponIdRef.current = weaponId;
       setPrimaryWeaponId(weaponId);
@@ -675,14 +713,25 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
         return;
       }
       const owned = ownedWeaponIdsRef.current.has(weaponId);
-      if (!owned) {
+      const currentAmmo = getWeaponAmmo(weaponId, weaponAmmoRef.current);
+      const needsAmmo = weapon.ammoCapacity !== null && currentAmmo < weapon.ammoCapacity;
+      if (!owned || needsAmmo) {
         if (creditsRef.current < weapon.price) {
           return;
         }
         creditsRef.current -= weapon.price;
         setCredits(creditsRef.current);
-        ownedWeaponIdsRef.current = new Set([...ownedWeaponIdsRef.current, weaponId]);
-        setOwnedWeaponIds((previous) => (previous.includes(weaponId) ? previous : [...previous, weaponId]));
+        if (!owned) {
+          ownedWeaponIdsRef.current = new Set([...ownedWeaponIdsRef.current, weaponId]);
+          setOwnedWeaponIds((previous) => (previous.includes(weaponId) ? previous : [...previous, weaponId]));
+        }
+        if (weapon.ammoCapacity !== null) {
+          weaponAmmoRef.current = {
+            ...weaponAmmoRef.current,
+            [weaponId]: weapon.ammoCapacity
+          };
+          setWeaponAmmo(weaponAmmoRef.current);
+        }
       }
       equipWeapon(weaponId);
     },
@@ -1299,7 +1348,8 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     };
 
     const grantKillReward = (enemy: EnemyRuntime) => {
-      const reward = enemy.reward + currentWave * 3;
+      const reward =
+        enemy.kind === "death-star" ? enemy.reward + currentWave * 2 : 6 + Math.floor(currentWave * 1.4);
       score += (enemy.kind === "death-star" ? 40 : 10) + currentWave;
       creditsRef.current += reward;
       setCredits(creditsRef.current);
@@ -1348,6 +1398,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       enemy.hp -= damage;
       if (enemy.targetMode === "planet") {
         enemy.state = "aggro";
+        enemy.attackDelay = 0;
         aggroPlanetGroup(enemy.targetPlanetId, origin, enemy.id);
       }
       if (enemy.hp <= 0) {
@@ -1429,6 +1480,47 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       return target;
     };
 
+    const fallbackToDefaultPrimary = () => {
+      if (primaryWeaponIdRef.current !== DEFAULT_PRIMARY_WEAPON) {
+        primaryWeaponIdRef.current = DEFAULT_PRIMARY_WEAPON;
+        setPrimaryWeaponId(DEFAULT_PRIMARY_WEAPON);
+      }
+    };
+
+    const consumeWeaponAmmo = (weaponId: WeaponId) => {
+      const weapon = WEAPON_CATALOG[weaponId];
+      if (!weapon || weapon.ammoCapacity === null) {
+        return true;
+      }
+      const currentAmmo = getWeaponAmmo(weaponId, weaponAmmoRef.current);
+      if (currentAmmo <= 0) {
+        if (weapon.slot === "primary") {
+          fallbackToDefaultPrimary();
+        } else if (secondaryWeaponIdRef.current === weaponId) {
+          secondaryWeaponIdRef.current = null;
+          setSecondaryWeaponId(null);
+        }
+        return false;
+      }
+
+      const nextAmmo = Math.max(0, currentAmmo - 1);
+      weaponAmmoRef.current = {
+        ...weaponAmmoRef.current,
+        [weaponId]: nextAmmo
+      };
+      setWeaponAmmo(weaponAmmoRef.current);
+
+      if (nextAmmo <= 0) {
+        if (weapon.slot === "primary") {
+          fallbackToDefaultPrimary();
+        } else if (secondaryWeaponIdRef.current === weaponId) {
+          secondaryWeaponIdRef.current = null;
+          setSecondaryWeaponId(null);
+        }
+      }
+      return true;
+    };
+
     const firePrimaryWeapon = () => {
       if (
         fireCooldown > 0 ||
@@ -1439,8 +1531,12 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       ) {
         return;
       }
-      const weaponId = primaryWeaponIdRef.current;
-      const weapon = WEAPON_CATALOG[weaponId] ?? WEAPON_CATALOG[DEFAULT_PRIMARY_WEAPON];
+      let weaponId = primaryWeaponIdRef.current;
+      let weapon = WEAPON_CATALOG[weaponId] ?? WEAPON_CATALOG[DEFAULT_PRIMARY_WEAPON];
+      if (weaponId !== DEFAULT_PRIMARY_WEAPON && !consumeWeaponAmmo(weaponId)) {
+        weaponId = DEFAULT_PRIMARY_WEAPON;
+        weapon = WEAPON_CATALOG[DEFAULT_PRIMARY_WEAPON];
+      }
       forward.set(0, 0, -1).applyQuaternion(ship.quaternion).normalize();
       const addProjectile = (projectile: ProjectileRuntime) => {
         projectiles.push(projectile);
@@ -1485,6 +1581,9 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       }
       const weapon = WEAPON_CATALOG[weaponId];
       if (!weapon || weapon.slot !== "secondary") {
+        return;
+      }
+      if (!consumeWeaponAmmo(weaponId)) {
         return;
       }
 
@@ -1542,7 +1641,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
           canDamagePlanets: false,
           damage: 1.15,
           radius: 0.46,
-          speedMultiplier: 1.16
+          speedMultiplier: 1.36
         });
         projectiles.push(shot);
         scene.add(shot.mesh);
@@ -2044,12 +2143,20 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
             enemyDirection.divideScalar(targetDistance);
           }
 
+          const isArmed = enemy.attackDelay <= 0 || huntsShip || enemy.state === "aggro";
+          if (enemy.attackDelay > 0) {
+            enemy.attackDelay = Math.max(0, enemy.attackDelay - delta);
+          }
+
           const desiredDistance =
             huntsShip || enemy.state === "aggro" || !targetRuntime ? enemy.preferredDistance : targetRuntime.service.size + 2.8;
           if (targetDistance > desiredDistance) {
             enemy.group.position.addScaledVector(enemyDirection, enemy.speed * delta);
           } else if (!huntsShip && enemy.state === "raiding" && targetRuntime) {
-            damagePlanet(targetRuntime, delta * 1.2);
+            if (isArmed) {
+              const raidDamage = 0.26 + Math.min(currentWave, 16) * 0.025;
+              damagePlanet(targetRuntime, delta * raidDamage);
+            }
             enemy.group.position.addScaledVector(enemyDirection, Math.sin(elapsed * 2 + enemy.id) * delta * 0.35);
           } else {
             enemyLateral.set(-enemyDirection.z, 0, enemyDirection.x).normalize();
@@ -2081,8 +2188,10 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
           resolveEnemyPlanetAvoidance(enemy, targetRuntime, delta);
           enemy.group.lookAt(combatTarget);
           enemy.group.rotateY(Math.PI);
-          enemy.attackCooldown -= delta;
-          if (enemy.attackCooldown <= 0) {
+          if (isArmed) {
+            enemy.attackCooldown -= delta;
+          }
+          if (isArmed && enemy.attackCooldown <= 0) {
             const shotTarget = huntsShip || enemy.state === "aggro" || !targetRuntime ? ship.position : targetRuntime.worldPosition;
             if (enemy.kind === "death-star") {
               spawnDeathStarVolley(enemy, shotTarget, elapsed);
@@ -2092,7 +2201,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
             const waveConfig = getWaveConfig(currentWave);
             enemy.attackCooldown =
               enemy.kind === "death-star"
-                ? Math.max(1.05, waveConfig.attackCooldown * 0.42) + (enemy.id % 3) * 0.18
+                ? Math.max(0.72, waveConfig.attackCooldown * 0.28) + (enemy.id % 3) * 0.1
                 : waveConfig.attackCooldown + (enemy.id % 5) * 0.22;
           }
         }
@@ -2300,7 +2409,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
                 }
                 runtime.group.getWorldPosition(runtime.worldPosition);
                 if (projectile.mesh.position.distanceTo(runtime.worldPosition) < runtime.service.size + projectile.radius) {
-                  damagePlanet(runtime, projectile.damage * 4);
+                  damagePlanet(runtime, projectile.damage * (2 + Math.min(currentWave, 10) * 0.14));
                   removeProjectile(projectile);
                   break;
                 }
@@ -2446,9 +2555,11 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
           projectiles: projectiles.length,
           roundCountdown,
           score,
+          secondaryAmmo: formatWeaponAmmo(secondaryWeaponIdRef.current, weaponAmmoRef.current),
           secondaryWeapon: secondaryWeaponIdRef.current,
           shipHealth: Math.round(runtimeShipHealth),
           threat,
+          primaryAmmo: formatWeaponAmmo(primaryWeaponIdRef.current, weaponAmmoRef.current),
           primaryWeapon: primaryWeaponIdRef.current,
           wave: currentWave
         });
@@ -2511,20 +2622,34 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       : offeredWeapon
         ? offeredWeapon.id === secondaryWeaponId
         : false;
-  const offeredWeaponAffordable = offeredWeapon ? credits >= offeredWeapon.price : false;
-  const offeredWeaponMissing = offeredWeapon ? Math.max(0, offeredWeapon.price - credits) : 0;
-  const offeredWeaponAction = offeredWeaponEquipped
-    ? "Equipped"
-    : offeredWeaponOwned
-      ? `Equip ${offeredWeapon?.slot}`
-      : `Buy ${offeredWeapon?.price} cr`;
-  const offeredWeaponStatus = offeredWeaponOwned
-    ? offeredWeaponEquipped
+  const offeredWeaponAmmo = offeredWeapon ? getWeaponAmmo(offeredWeapon.id, weaponAmmo) : 0;
+  const offeredWeaponCapacity = offeredWeapon?.ammoCapacity ?? null;
+  const offeredWeaponNeedsReload =
+    Boolean(offeredWeapon) && offeredWeaponCapacity !== null && offeredWeaponAmmo < offeredWeaponCapacity;
+  const offeredWeaponNeedsPayment = Boolean(offeredWeapon) && (!offeredWeaponOwned || offeredWeaponNeedsReload);
+  const offeredWeaponAffordable = offeredWeapon ? !offeredWeaponNeedsPayment || credits >= offeredWeapon.price : false;
+  const offeredWeaponMissing =
+    offeredWeapon && offeredWeaponNeedsPayment ? Math.max(0, offeredWeapon.price - credits) : 0;
+  const offeredWeaponAmmoStatus =
+    offeredWeaponCapacity === null
+      ? "Ammo INF"
+      : `Ammo ${Math.max(0, Math.floor(offeredWeaponAmmo))}/${offeredWeaponCapacity}`;
+  const offeredWeaponAction = !offeredWeaponOwned
+    ? `Buy ${offeredWeapon?.price} cr`
+    : offeredWeaponNeedsReload
+      ? `Reload ${offeredWeapon?.price} cr`
+      : offeredWeaponEquipped
+        ? "Equipped"
+        : `Equip ${offeredWeapon?.slot}`;
+  const offeredWeaponStatus = offeredWeaponNeedsPayment
+    ? offeredWeaponAffordable
+      ? offeredWeaponOwned
+        ? "Ready to reload"
+        : "Ready to buy"
+      : `Missing ${offeredWeaponMissing} cr`
+    : offeredWeaponEquipped
       ? "Installed"
-      : "Owned"
-    : offeredWeaponAffordable
-      ? "Ready to buy"
-      : `Missing ${offeredWeaponMissing} cr`;
+      : "Loaded";
 
   return (
     <main className={`relative h-screen w-screen overflow-hidden bg-void text-parchment ${dockedService ? "is-docked" : ""}`}>
@@ -2535,7 +2660,24 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
         }`}
       />
 
-      {!dockedService ? <div className="game-crosshair" aria-hidden="true" /> : null}
+      {!dockedService ? (
+        <div className="game-crosshair" aria-hidden="true" />
+      ) : null}
+
+      {isBattleStarted && !dockedService ? (
+        <div className="pointer-events-none ammo-strip" aria-hidden="true">
+          <div className="ammo-strip-card">
+            <span>Primary</span>
+            <strong>{primaryAmmoLabel}</strong>
+            <em>{activePrimaryWeapon.name}</em>
+          </div>
+          <div className="ammo-strip-card">
+            <span>Secondary</span>
+            <strong>{secondaryAmmoLabel}</strong>
+            <em>{activeSecondaryWeapon?.name ?? "Empty"}</em>
+          </div>
+        </div>
+      ) : null}
 
       {gamePhase === "Countdown" ? (
         <div className="round-banner" aria-live="polite">
@@ -2608,12 +2750,14 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
           </div>
           <div className="combat-card combat-card-wide">
             <span>Ship HP</span>
+            <strong>{shipHealth}%</strong>
             <div className="ship-health">
               <i style={{ width: `${shipHealth}%` }} />
             </div>
           </div>
           <div className="combat-card combat-card-wide">
             <span>Defend {combatHud.threat}</span>
+            <strong>{combatHud.planetHealth}%</strong>
             <div className="planet-health">
               <i style={{ width: `${combatHud.planetHealth}%` }} />
             </div>
@@ -2757,32 +2901,42 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
               <div className="weapon-loadout-row">
                 <span>Primary</span>
                 <div>
-                  {ownedPrimaryWeapons.map((weapon) => (
-                    <button
-                      key={weapon.id}
-                      className={`weapon-chip ${weapon.id === primaryWeaponId ? "is-active" : ""}`}
-                      type="button"
-                      onClick={() => equipWeapon(weapon.id)}
-                    >
-                      {weapon.name}
-                    </button>
-                  ))}
+                  {ownedPrimaryWeapons.map((weapon) => {
+                    const ammo = getWeaponAmmo(weapon.id, weaponAmmo);
+                    const empty = weapon.ammoCapacity !== null && ammo <= 0;
+                    return (
+                      <button
+                        key={weapon.id}
+                        className={`weapon-chip ${weapon.id === primaryWeaponId ? "is-active" : ""} ${empty ? "is-empty" : ""}`}
+                        type="button"
+                        onClick={() => equipWeapon(weapon.id)}
+                      >
+                        {weapon.name}
+                        <span>{formatWeaponAmmo(weapon.id, weaponAmmo)}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
               <div className="weapon-loadout-row">
                 <span>Secondary</span>
                 <div>
                   {ownedSecondaryWeapons.length > 0 ? (
-                    ownedSecondaryWeapons.map((weapon) => (
-                      <button
-                        key={weapon.id}
-                        className={`weapon-chip ${weapon.id === secondaryWeaponId ? "is-active" : ""}`}
-                        type="button"
-                        onClick={() => equipWeapon(weapon.id)}
-                      >
-                        {weapon.name}
-                      </button>
-                    ))
+                    ownedSecondaryWeapons.map((weapon) => {
+                      const ammo = getWeaponAmmo(weapon.id, weaponAmmo);
+                      const empty = weapon.ammoCapacity !== null && ammo <= 0;
+                      return (
+                        <button
+                          key={weapon.id}
+                          className={`weapon-chip ${weapon.id === secondaryWeaponId ? "is-active" : ""} ${empty ? "is-empty" : ""}`}
+                          type="button"
+                          onClick={() => equipWeapon(weapon.id)}
+                        >
+                          {weapon.name}
+                          <span>{formatWeaponAmmo(weapon.id, weaponAmmo)}</span>
+                        </button>
+                      );
+                    })
                   ) : (
                     <em>Buy at planets</em>
                   )}
@@ -2802,13 +2956,14 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
                   <strong>{offeredWeapon.name}</strong>
                   <p>{offeredWeapon.description}</p>
                   <small>
-                    {offeredWeapon.slot} weapon · Cost {offeredWeapon.price} cr · Balance {credits} cr · {offeredWeaponStatus}
+                    {offeredWeapon.slot} weapon · {offeredWeaponAmmoStatus} · Cost {offeredWeapon.price} cr · Balance {credits} cr ·{" "}
+                    {offeredWeaponStatus}
                   </small>
                 </div>
                 <button
-                  className={!offeredWeaponOwned && !offeredWeaponAffordable ? "is-locked" : ""}
+                  className={offeredWeaponNeedsPayment && !offeredWeaponAffordable ? "is-locked" : ""}
                   type="button"
-                  aria-disabled={!offeredWeaponOwned && !offeredWeaponAffordable}
+                  aria-disabled={offeredWeaponNeedsPayment && !offeredWeaponAffordable}
                   onClick={() => buyOrEquipWeapon(offeredWeapon.id)}
                 >
                   <Coins className="h-4 w-4" />

@@ -53,24 +53,24 @@ canvas.is-pointer-locked {
   z-index: 12;
   display: flex;
   align-items: stretch;
-  gap: 8px;
+  gap: 6px;
   max-width: calc(100vw - 48px);
 }
 
 .combat-card {
-  min-width: 82px;
+  min-width: 74px;
   border: 1px solid rgba(249, 249, 234, 0.14);
   border-radius: 8px;
   background:
     linear-gradient(135deg, rgba(249, 249, 234, 0.08), rgba(215, 71, 33, 0.08)),
     rgba(6, 4, 17, 0.68);
   box-shadow: 0 16px 50px rgba(0, 0, 0, 0.3);
-  padding: 9px 11px;
+  padding: 7px 9px;
   backdrop-filter: blur(16px);
 }
 
 .combat-card-wide {
-  width: 190px;
+  width: 166px;
 }
 
 .combat-card span {
@@ -78,7 +78,7 @@ canvas.is-pointer-locked {
   overflow: hidden;
   color: rgba(249, 249, 234, 0.52);
   font-family: "Space Grotesk", system-ui, sans-serif;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 700;
   line-height: 1;
   text-overflow: ellipsis;
@@ -89,10 +89,10 @@ canvas.is-pointer-locked {
 .combat-card strong {
   display: block;
   overflow: hidden;
-  margin-top: 7px;
+  margin-top: 5px;
   color: #ffcf65;
   font-family: "Space Grotesk", system-ui, sans-serif;
-  font-size: 18px;
+  font-size: 16px;
   line-height: 1;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -100,8 +100,8 @@ canvas.is-pointer-locked {
 
 .planet-health,
 .ship-health {
-  height: 8px;
-  margin-top: 10px;
+  height: 6px;
+  margin-top: 7px;
   overflow: hidden;
   border-radius: 999px;
   background: rgba(249, 249, 234, 0.12);
@@ -159,6 +159,48 @@ canvas.is-pointer-locked {
 .game-crosshair::after {
   width: 18px;
   height: 2px;
+}
+
+.ammo-strip {
+  position: absolute;
+  bottom: 88px;
+  left: 50%;
+  z-index: 11;
+  display: flex;
+  gap: 6px;
+  transform: translateX(-50%);
+}
+
+.ammo-strip-card {
+  display: grid;
+  width: 100px;
+  gap: 2px;
+  border: 1px solid rgba(90, 166, 189, 0.12);
+  border-radius: 7px;
+  background: rgba(6, 4, 17, 0.3);
+  padding: 5px 7px;
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  text-transform: uppercase;
+  backdrop-filter: blur(10px);
+  opacity: 0.74;
+}
+
+.ammo-strip-card span,
+.ammo-strip-card em {
+  overflow: hidden;
+  color: rgba(249, 249, 234, 0.42);
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ammo-strip-card strong {
+  color: rgba(255, 207, 101, 0.9);
+  font-size: 14px;
+  line-height: 1;
 }
 
 .round-banner {
@@ -707,6 +749,9 @@ canvas.is-pointer-locked {
 }
 
 .weapon-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-height: 28px;
   border: 1px solid rgba(249, 249, 234, 0.1);
   border-radius: 999px;
@@ -716,6 +761,7 @@ canvas.is-pointer-locked {
   font-family: "Space Grotesk", system-ui, sans-serif;
   font-size: 10px;
   font-weight: 700;
+  gap: 6px;
   text-transform: uppercase;
 }
 
@@ -724,6 +770,20 @@ canvas.is-pointer-locked {
   border-color: rgba(255, 207, 101, 0.48);
   background: rgba(255, 207, 101, 0.14);
   color: #ffcf65;
+}
+
+.weapon-chip.is-empty {
+  border-color: rgba(249, 249, 234, 0.08);
+  color: rgba(249, 249, 234, 0.42);
+}
+
+.weapon-chip span {
+  min-width: 22px;
+  border-radius: 999px;
+  background: rgba(249, 249, 234, 0.13);
+  color: #f9f9ea;
+  padding: 3px 5px;
+  text-align: center;
 }
 
 .metric {
@@ -1213,9 +1273,18 @@ canvas.is-pointer-locked {
     justify-content: center;
   }
 
+  .ammo-strip {
+    bottom: 148px;
+  }
+
+  .ammo-strip-card {
+    width: 96px;
+    padding: 5px 7px;
+  }
+
   .combat-card {
-    min-width: 70px;
-    padding: 8px 9px;
+    min-width: 64px;
+    padding: 6px 7px;
   }
 
   .combat-card-wide {

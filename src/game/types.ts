@@ -60,6 +60,7 @@ export type EnemyRuntime = {
   hp: number;
   maxHp: number;
   speed: number;
+  attackDelay: number;
   attackCooldown: number;
   pattern: AttackPatternKind;
   hitRadius: number;
