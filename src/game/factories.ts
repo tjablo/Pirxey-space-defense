@@ -771,6 +771,7 @@ export const createEnemyBug = (
   const hitShield = new THREE.Mesh(assets.hitShieldGeometry, createHitShieldMaterial());
   hitShield.name = "enemy-hit-shield";
   hitShield.scale.set(1.05, 0.72, 1.45);
+  hitShield.visible = false;
   group.add(hitShield);
 
   for (const side of [-1, 1]) {
@@ -788,6 +789,7 @@ export const createEnemyBug = (
   group.add(light);
   const hitLight = new THREE.PointLight(0x6fb5c8, 0, 7.5);
   hitLight.name = "enemy-hit-light";
+  hitLight.visible = false;
   group.add(hitLight);
   group.scale.setScalar(1.08);
 
@@ -860,6 +862,7 @@ export const createDeathStarBoss = (
 
   const hitShield = new THREE.Mesh(assets.hitShieldGeometry, createHitShieldMaterial());
   hitShield.name = "enemy-hit-shield";
+  hitShield.visible = false;
   group.add(hitShield);
 
   const weaponPorts = [
@@ -881,6 +884,7 @@ export const createDeathStarBoss = (
   group.add(light);
   const hitLight = new THREE.PointLight(0x6fb5c8, 0, 18);
   hitLight.name = "enemy-hit-light";
+  hitLight.visible = false;
   group.add(hitLight);
 
   const hp = 24 + wave * 4;
@@ -967,10 +971,6 @@ export const createExplosion = (
   );
   coreFlash.scale.setScalar(scale);
   group.add(coreFlash);
-  velocity.push(new THREE.Vector3());
-
-  const flash = new THREE.PointLight(color, 2.2 * scale, 12 * scale);
-  group.add(flash);
   velocity.push(new THREE.Vector3());
 
   return {

@@ -41,7 +41,7 @@ import {
   disposeObject
 } from "../game/factories";
 import { SOUNDTRACK_URLS } from "../game/soundtrack";
-import type { CombatHud, EnemyRuntime, ExplosionRuntime, ProjectileRuntime } from "../game/types";
+import type { CombatHud, EnemyRuntime, ExplosionRuntime, ProjectileRuntime, WaveConfig } from "../game/types";
 import { createSpawnPosition, getWaveConfig } from "../game/waves";
 import {
   DEFAULT_OWNED_WEAPONS,
@@ -119,6 +119,30 @@ type PlanetRuntime = {
   maxHealth: number;
 };
 
+type WaveSpawnJob =
+  | {
+      config: WaveConfig;
+      count: number;
+      groupIndex: number;
+      index: number;
+      kind: "bug";
+      targetRuntime: PlanetRuntime;
+      wave: number;
+    }
+  | {
+      bossIndex: number;
+      config: WaveConfig;
+      count: number;
+      kind: "boss";
+      targetRuntime: PlanetRuntime;
+      wave: number;
+    };
+
+type StagedEnemy = {
+  enemy: EnemyRuntime;
+  job: WaveSpawnJob;
+};
+
 type SceneBridge = {
   flyTo: (id: string) => void;
   dockCurrent: () => void;
@@ -145,6 +169,8 @@ declare global {
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 const ENEMY_HIT_FLASH_DURATION = 0.28;
+const WAVE_PREP_DURATION = 10;
+const WAVE_STAGING_FRAME_BUDGET_MS = 1.6;
 
 const createTouchFlightInput = (): TouchFlightInput => ({
   ascend: false,
@@ -577,7 +603,7 @@ const createCombatHudState = (phase: CombatHud["phase"]): CombatHud => ({
   enemies: 0,
   phase,
   planetHealth: 100,
-  roundCountdown: null,
+  roundCountdown: phase === "Countdown" ? WAVE_PREP_DURATION : null,
   score: 0,
   threat: phase === "Exploring" ? "Exploration mode" : "Scanning",
   wave: 0
@@ -953,7 +979,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     setCombatHud((previous) => ({
       ...previous,
       phase: "Countdown",
-      roundCountdown: 4,
+      roundCountdown: WAVE_PREP_DURATION,
       threat: "Next round"
     }));
     setGamePhase("Countdown");
@@ -1005,12 +1031,14 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     let runtimeWarmupTimeoutId: number | null = null;
     let lastTelemetry = 0;
     let lastCombatHud = 0;
-    let lastPixelSample = 0;
     let lastNearbyKey = "";
     let fireCooldown = 0;
     let starSpiralPhase = 0;
     let secondaryFireCooldown = 0;
-    let waveCooldown = 4;
+    let waveCooldown = WAVE_PREP_DURATION;
+    let stagedWave = 0;
+    let waveSpawnJobs: WaveSpawnJob[] = [];
+    let waveSpawnJobIndex = 0;
     let currentWave = 0;
     let currentWaveTargetId = "";
     let score = 0;
@@ -1021,6 +1049,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     let flamePower = 0;
     const keys = new Set<string>();
     const enemies: EnemyRuntime[] = [];
+    const stagedEnemies: StagedEnemy[] = [];
     const projectiles: ProjectileRuntime[] = [];
     const explosions: ExplosionRuntime[] = [];
     const clock = new THREE.Clock();
@@ -1041,6 +1070,8 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     const enemyDirection = new THREE.Vector3();
     const projectileDirection = new THREE.Vector3();
     const projectilePosition = new THREE.Vector3();
+    const projectileLookAt = new THREE.Vector3();
+    const projectileImpulse = new THREE.Vector3();
     const muzzleOffset = new THREE.Vector3();
     const enemyMuzzleOffset = new THREE.Vector3();
     const enemyShotTarget = new THREE.Vector3();
@@ -1054,6 +1085,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     const enemyLateral = new THREE.Vector3();
     const enemyPlanetOffset = new THREE.Vector3();
     const enemyPlanetTangent = new THREE.Vector3();
+    const bossSpawnOffset = new THREE.Vector3();
     const lookRig = new THREE.Object3D();
     const autopilotTarget = { id: selectedIdRef.current, active: false };
     const dockedTarget = {
@@ -1075,7 +1107,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     const renderer = new THREE.WebGLRenderer({
       antialias: true,
       powerPreference: "high-performance",
-      preserveDrawingBuffer: true
+      preserveDrawingBuffer: false
     });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, mobilePerformanceMode ? 1.5 : 2));
     renderer.setSize(mount.clientWidth, mount.clientHeight);
@@ -1577,19 +1609,22 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     };
 
     const aggroPlanetGroup = (planetId: string, origin: THREE.Vector3, sourceEnemyId: number) => {
-      const candidates = enemies
-        .filter(
-          (enemy) =>
-            enemy.targetMode === "planet" &&
-            enemy.targetPlanetId === planetId &&
-            enemy.id !== sourceEnemyId &&
-            enemy.state === "raiding"
-        )
-        .map((enemy) => ({
-          distance: enemy.group.position.distanceTo(origin),
+      const candidates: Array<{ distanceSq: number; enemy: EnemyRuntime }> = [];
+      for (const enemy of enemies) {
+        if (
+          enemy.targetMode !== "planet" ||
+          enemy.targetPlanetId !== planetId ||
+          enemy.id === sourceEnemyId ||
+          enemy.state !== "raiding"
+        ) {
+          continue;
+        }
+        candidates.push({
+          distanceSq: enemy.group.position.distanceToSquared(origin),
           enemy
-        }))
-        .sort((a, b) => a.distance - b.distance);
+        });
+      }
+      candidates.sort((a, b) => a.distanceSq - b.distanceSq);
       const nearbyPool = candidates.slice(0, Math.min(candidates.length, 4 + Math.floor(Math.random() * 5)));
       const maxAggro = Math.min(nearbyPool.length, 2 + Math.floor(currentWave / 4), 6);
       const aggroCount = maxAggro > 0 ? 1 + Math.floor(Math.random() * maxAggro) : 0;
@@ -1611,12 +1646,15 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     };
 
     const damageEnemy = (enemy: EnemyRuntime, damage: number, origin: THREE.Vector3) => {
+      const shouldAggroPlanetGroup = enemy.targetMode === "planet" && enemy.state === "raiding";
       enemy.hp -= damage;
       enemy.hitFlash = Math.max(enemy.hitFlash ?? 0, ENEMY_HIT_FLASH_DURATION);
       if (enemy.targetMode === "planet") {
         enemy.state = "aggro";
         enemy.attackDelay = 0;
-        aggroPlanetGroup(enemy.targetPlanetId, origin, enemy.id);
+        if (shouldAggroPlanetGroup) {
+          aggroPlanetGroup(enemy.targetPlanetId, origin, enemy.id);
+        }
       }
       if (enemy.hp <= 0) {
         destroyEnemy(enemy);
@@ -1636,31 +1674,35 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       );
       if (isHomingMissile) {
         let nearestEnemy: EnemyRuntime | null = null;
-        let nearestDistance = Number.POSITIVE_INFINITY;
+        let nearestDistanceSq = Number.POSITIVE_INFINITY;
         let secondEnemy: EnemyRuntime | null = null;
-        let secondDistance = Number.POSITIVE_INFINITY;
+        let secondDistanceSq = Number.POSITIVE_INFINITY;
 
         for (const enemy of enemies) {
-          const distance = enemy.group.position.distanceTo(blastOrigin);
-          if (distance > radius + enemy.hitRadius) {
+          const hitRadius = radius + enemy.hitRadius;
+          const distanceSq = enemy.group.position.distanceToSquared(blastOrigin);
+          if (distanceSq > hitRadius * hitRadius) {
             continue;
           }
-          if (distance < nearestDistance) {
+          if (distanceSq < nearestDistanceSq) {
             secondEnemy = nearestEnemy;
-            secondDistance = nearestDistance;
+            secondDistanceSq = nearestDistanceSq;
             nearestEnemy = enemy;
-            nearestDistance = distance;
-          } else if (distance < secondDistance) {
+            nearestDistanceSq = distanceSq;
+          } else if (distanceSq < secondDistanceSq) {
             secondEnemy = enemy;
-            secondDistance = distance;
+            secondDistanceSq = distanceSq;
           }
         }
 
         if (nearestEnemy) {
           damageEnemy(nearestEnemy, projectile.damage, blastOrigin);
         }
-        if (secondEnemy && secondDistance <= 1.55 + secondEnemy.hitRadius * 0.35) {
-          damageEnemy(secondEnemy, projectile.damage, blastOrigin);
+        if (secondEnemy) {
+          const secondClipRadius = 1.55 + secondEnemy.hitRadius * 0.35;
+          if (secondDistanceSq <= secondClipRadius * secondClipRadius) {
+            damageEnemy(secondEnemy, projectile.damage, blastOrigin);
+          }
         }
         removeProjectile(projectile);
         return;
@@ -1668,8 +1710,10 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
 
       for (let enemyIndex = enemies.length - 1; enemyIndex >= 0; enemyIndex -= 1) {
         const enemy = enemies[enemyIndex];
-        const distance = enemy.group.position.distanceTo(blastOrigin);
-        if (distance <= radius + 0.75) {
+        const blastHitRadius = radius + 0.75;
+        const distanceSq = enemy.group.position.distanceToSquared(blastOrigin);
+        if (distanceSq <= blastHitRadius * blastHitRadius) {
+          const distance = Math.sqrt(distanceSq);
           const coreRadius = radius * (isPlasma ? 0.68 : 0.48);
           const falloff =
             distance <= coreRadius ? 1 : clamp(1 - (distance - coreRadius) / Math.max(radius - coreRadius, 0.1), 0.58, 1);
@@ -1686,21 +1730,23 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       minAlignment = 0.16
     ) => {
       let target: EnemyRuntime | null = null;
-      let nearestDistance = maxDistance;
+      let nearestDistanceSq = maxDistance * maxDistance;
+      const maxDistanceSq = maxDistance * maxDistance;
       missileForward.copy(direction).normalize();
 
       for (const enemy of enemies) {
         missileTargetOffset.copy(enemy.group.position).sub(origin);
-        const distance = missileTargetOffset.length();
-        if (distance <= 0.001 || distance > maxDistance) {
+        const distanceSq = missileTargetOffset.lengthSq();
+        if (distanceSq <= 0.000001 || distanceSq > maxDistanceSq) {
           continue;
         }
+        const distance = Math.sqrt(distanceSq);
         const alignment = missileTargetOffset.divideScalar(distance).dot(missileForward);
         if (alignment < minAlignment) {
           continue;
         }
-        if (distance < nearestDistance) {
-          nearestDistance = distance;
+        if (distanceSq < nearestDistanceSq) {
+          nearestDistanceSq = distanceSq;
           target = enemy;
         }
       }
@@ -1837,9 +1883,10 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
         scene.add(orb.mesh);
       } else if (weaponId === "arc-pulse") {
         addExplosion(ship.position, 0x7dffea, 72, 3.4);
+        const arcPulseRadiusSq = 12.5 * 12.5;
         for (let enemyIndex = enemies.length - 1; enemyIndex >= 0; enemyIndex -= 1) {
           const enemy = enemies[enemyIndex];
-          if (enemy.group.position.distanceTo(ship.position) <= 12.5) {
+          if (enemy.group.position.distanceToSquared(ship.position) <= arcPulseRadiusSq) {
             destroyEnemy(enemy);
           }
         }
@@ -1961,55 +2008,163 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       }
     };
 
-    const spawnNextWave = () => {
-      currentWave += 1;
-      const config = getWaveConfig(currentWave);
-      const availablePlanets = activePlanets();
-      if (availablePlanets.length === 0) {
-        transitionGamePhase("Game over");
-        return;
+    const clearStagedWave = () => {
+      for (const staged of stagedEnemies) {
+        scene.remove(staged.enemy.group);
+        disposeObject(staged.enemy.group);
+      }
+      stagedEnemies.length = 0;
+      waveSpawnJobs = [];
+      waveSpawnJobIndex = 0;
+      stagedWave = 0;
+    };
+
+    const prepareNextWave = () => {
+      const nextWave = currentWave + 1;
+      if (stagedWave === nextWave) {
+        return waveSpawnJobs.length > 0 || stagedEnemies.length > 0;
       }
 
-      restoreActivePlanets();
-      restoreShip();
+      clearStagedWave();
+      const config = getWaveConfig(nextWave);
+      const availablePlanets = activePlanets();
+      if (availablePlanets.length === 0) {
+        return false;
+      }
+
       const groupCount = Math.min(config.groups, availablePlanets.length);
       const targetPlanets = Array.from(
         { length: groupCount },
-        (_, groupIndex) => availablePlanets[(currentWave + groupIndex - 1) % availablePlanets.length]
+        (_, groupIndex) => availablePlanets[(nextWave + groupIndex - 1) % availablePlanets.length]
       );
       currentWaveTargetId = targetPlanets[0]?.service.id ?? "";
       const baseCount = Math.floor(config.count / groupCount);
       let remainder = config.count % groupCount;
+      const nextJobs: WaveSpawnJob[] = [];
 
       for (let groupIndex = 0; groupIndex < targetPlanets.length; groupIndex += 1) {
         const targetRuntime = targetPlanets[groupIndex];
-        targetRuntime.group.getWorldPosition(spawnTarget);
         const enemiesInGroup = baseCount + (remainder > 0 ? 1 : 0);
         remainder = Math.max(0, remainder - 1);
         for (let i = 0; i < enemiesInGroup; i += 1) {
-          const enemy = createEnemyBug(
-            createSpawnPosition(spawnTarget, currentWave + groupIndex * 3, i, enemiesInGroup),
-            targetRuntime.service.id,
-            config
-          );
-          enemies.push(enemy);
-          scene.add(enemy.group);
+          nextJobs.push({
+            config,
+            count: enemiesInGroup,
+            groupIndex,
+            index: i,
+            kind: "bug",
+            targetRuntime,
+            wave: nextWave
+          });
         }
       }
 
       for (let bossIndex = 0; bossIndex < config.deathStarCount; bossIndex += 1) {
         const anchorRuntime = targetPlanets[bossIndex % targetPlanets.length] ?? availablePlanets[0];
-        anchorRuntime.group.getWorldPosition(spawnTarget);
+        nextJobs.push({
+          bossIndex,
+          config,
+          count: config.count,
+          kind: "boss",
+          targetRuntime: anchorRuntime,
+          wave: nextWave
+        });
+      }
+
+      stagedWave = nextWave;
+      waveSpawnJobs = nextJobs;
+      waveSpawnJobIndex = 0;
+      return true;
+    };
+
+    const positionStagedEnemy = (staged: StagedEnemy) => {
+      const { enemy, job } = staged;
+      job.targetRuntime.group.getWorldPosition(spawnTarget);
+      if (job.kind === "bug") {
+        enemy.group.position.copy(createSpawnPosition(spawnTarget, job.wave + job.groupIndex * 3, job.index, job.count));
+        enemy.targetPlanetId = job.targetRuntime.service.id;
+        return;
+      }
+
+      enemy.group.position.copy(
+        createSpawnPosition(
+          spawnTarget,
+          job.wave * 3 + 41,
+          job.bossIndex + job.count,
+          Math.max(1, job.config.deathStarCount + 1)
+        )
+      );
+      bossSpawnOffset.set(0, 4 + job.bossIndex * 1.7, 0);
+      enemy.group.position.add(bossSpawnOffset);
+      enemy.targetPlanetId = job.targetRuntime.service.id;
+    };
+
+    const createStagedEnemy = (job: WaveSpawnJob) => {
+      job.targetRuntime.group.getWorldPosition(spawnTarget);
+      let enemy: EnemyRuntime;
+      if (job.kind === "bug") {
+        enemy = createEnemyBug(
+          createSpawnPosition(spawnTarget, job.wave + job.groupIndex * 3, job.index, job.count),
+          job.targetRuntime.service.id,
+          job.config
+        );
+      } else {
         const bossPosition = createSpawnPosition(
           spawnTarget,
-          currentWave * 3 + 41,
-          bossIndex + config.count,
-          Math.max(1, config.deathStarCount + 1)
-        ).add(new THREE.Vector3(0, 4 + bossIndex * 1.7, 0));
-        const boss = createDeathStarBoss(bossPosition, anchorRuntime.service.id, config, currentWave);
-        enemies.push(boss);
-        scene.add(boss.group);
+          job.wave * 3 + 41,
+          job.bossIndex + job.count,
+          Math.max(1, job.config.deathStarCount + 1)
+        );
+        bossPosition.add(bossSpawnOffset.set(0, 4 + job.bossIndex * 1.7, 0));
+        enemy = createDeathStarBoss(bossPosition, job.targetRuntime.service.id, job.config, job.wave);
       }
+      enemy.group.visible = false;
+      scene.add(enemy.group);
+      stagedEnemies.push({ enemy, job });
+    };
+
+    const stageNextWaveWork = () => {
+      if (!prepareNextWave()) {
+        return false;
+      }
+
+      const startedAt = performance.now();
+      let stagedThisFrame = 0;
+      while (
+        waveSpawnJobIndex < waveSpawnJobs.length &&
+        (stagedThisFrame === 0 || performance.now() - startedAt < WAVE_STAGING_FRAME_BUDGET_MS)
+      ) {
+        createStagedEnemy(waveSpawnJobs[waveSpawnJobIndex]);
+        waveSpawnJobIndex += 1;
+        stagedThisFrame += 1;
+      }
+
+      return waveSpawnJobIndex >= waveSpawnJobs.length;
+    };
+
+    const activateStagedWave = () => {
+      if (stagedWave !== currentWave + 1 || waveSpawnJobIndex < waveSpawnJobs.length) {
+        return false;
+      }
+      if (activePlanets().length === 0) {
+        clearStagedWave();
+        transitionGamePhase("Game over");
+        return false;
+      }
+
+      currentWave = stagedWave;
+      restoreActivePlanets();
+      restoreShip();
+      for (const staged of stagedEnemies) {
+        positionStagedEnemy(staged);
+        staged.enemy.group.visible = true;
+        enemies.push(staged.enemy);
+      }
+      stagedEnemies.length = 0;
+      waveSpawnJobs = [];
+      waveSpawnJobIndex = 0;
+      stagedWave = 0;
+      return true;
     };
 
     const dockCurrent = () => {
@@ -2370,15 +2525,20 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       const distanceToSelected = shipWorld.distanceTo(targetWorld) - selectedRuntime.service.size;
 
       if (phase === "Countdown") {
+        const stagedReady = stageNextWaveWork();
         waveCooldown -= delta;
         if (waveCooldown <= 0) {
-          spawnNextWave();
-          if (activePlanets().length > 0) {
+          if (stagedReady && activateStagedWave()) {
             transitionGamePhase("Running");
+          } else if (activePlanets().length === 0) {
+            clearStagedWave();
+            transitionGamePhase("Game over");
+          } else {
+            waveCooldown = 0;
           }
         }
       } else if (phase === "Running" && enemies.length === 0) {
-        waveCooldown = 5;
+        waveCooldown = WAVE_PREP_DURATION;
         transitionGamePhase("Countdown");
       }
 
@@ -2417,6 +2577,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
             enemy.hitFlash = Math.max(0, (enemy.hitFlash ?? 0) - delta);
             const enemyFlashRatio = clamp(enemy.hitFlash / ENEMY_HIT_FLASH_DURATION, 0, 1);
             if (enemy.hitShield) {
+              enemy.hitShield.visible = true;
               enemy.hitShield.material.opacity = enemyFlashRatio * (enemy.kind === "death-star" ? 0.3 : 0.42);
               if (enemy.kind === "death-star") {
                 enemy.hitShield.scale.setScalar(1 + enemyFlashRatio * 0.16);
@@ -2429,6 +2590,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
               }
             }
             if (enemy.hitLight) {
+              enemy.hitLight.visible = true;
               enemy.hitLight.intensity = enemyFlashRatio * (enemy.kind === "death-star" ? 4.2 : 2.6);
             }
           } else {
@@ -2440,8 +2602,14 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
                 enemy.hitShield.scale.set(1.05, 0.72, 1.45);
               }
             }
+            if (enemy.hitShield?.visible) {
+              enemy.hitShield.visible = false;
+            }
             if (enemy.hitLight && enemy.hitLight.intensity !== 0) {
               enemy.hitLight.intensity = 0;
+            }
+            if (enemy.hitLight?.visible) {
+              enemy.hitLight.visible = false;
             }
           }
 
@@ -2700,7 +2868,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
             let target = projectile.targetEnemyId
               ? enemies.find((enemy) => enemy.id === projectile.targetEnemyId)
               : null;
-            if (target && target.group.position.distanceTo(projectile.mesh.position) > 180) {
+            if (target && target.group.position.distanceToSquared(projectile.mesh.position) > 180 * 180) {
               target = null;
               projectile.targetEnemyId = undefined;
             }
@@ -2714,7 +2882,8 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
               projectileDirection.copy(targetEnemyPosition).sub(projectile.mesh.position).normalize().multiplyScalar(speed);
               projectile.velocity.lerp(projectileDirection, clamp((projectile.turnRate ?? 2.8) * delta, 0, 1));
               projectile.velocity.setLength(speed);
-              projectile.mesh.lookAt(projectile.mesh.position.clone().add(projectile.velocity));
+              projectileLookAt.copy(projectile.mesh.position).add(projectile.velocity);
+              projectile.mesh.lookAt(projectileLookAt);
             }
           }
           if (projectile.weaponId === "plasma-orb") {
@@ -2729,26 +2898,30 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
           }
           projectile.mesh.position.addScaledVector(projectile.velocity, delta);
           projectile.life -= delta;
+          let projectileRemoved = false;
 
           if (projectile.owner === "player") {
             for (let enemyIndex = enemies.length - 1; enemyIndex >= 0; enemyIndex -= 1) {
               const enemy = enemies[enemyIndex];
-              const hitDistance = projectile.mesh.position.distanceTo(enemy.group.position);
-              if (hitDistance < projectile.radius + enemy.hitRadius) {
+              const hitRadius = projectile.radius + enemy.hitRadius;
+              if (projectile.mesh.position.distanceToSquared(enemy.group.position) < hitRadius * hitRadius) {
                 if (projectile.blastRadius) {
                   detonatePlayerProjectile(projectile);
                 } else {
                   damageEnemy(enemy, projectile.damage, enemy.group.position);
                   removeProjectile(projectile);
                 }
+                projectileRemoved = true;
                 break;
               }
             }
           } else {
-            if (!dockedTarget.active && projectile.mesh.position.distanceTo(ship.position) < projectile.radius + 1.0) {
+            const shipHitRadius = projectile.radius + 1.0;
+            if (!dockedTarget.active && projectile.mesh.position.distanceToSquared(ship.position) < shipHitRadius * shipHitRadius) {
               damageShip(12 + Math.min(currentWave, 10) * 1.4);
               if (!shipDestroyed) {
-                velocity.addScaledVector(projectile.velocity.clone().normalize(), 3.4);
+                projectileImpulse.copy(projectile.velocity).normalize();
+                velocity.addScaledVector(projectileImpulse, 3.4);
               }
               removeProjectile(projectile);
               continue;
@@ -2760,16 +2933,18 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
                   continue;
                 }
                 runtime.group.getWorldPosition(runtime.worldPosition);
-                if (projectile.mesh.position.distanceTo(runtime.worldPosition) < runtime.service.size + projectile.radius) {
+                const planetHitRadius = runtime.service.size + projectile.radius;
+                if (projectile.mesh.position.distanceToSquared(runtime.worldPosition) < planetHitRadius * planetHitRadius) {
                   damagePlanet(runtime, projectile.damage * (2 + Math.min(currentWave, 10) * 0.14));
                   removeProjectile(projectile);
+                  projectileRemoved = true;
                   break;
                 }
               }
             }
           }
 
-          if (projectiles.includes(projectile) && projectile.life <= 0) {
+          if (!projectileRemoved && projectile.life <= 0) {
             if (projectile.owner === "player" && projectile.detonateOnExpire) {
               detonatePlayerProjectile(projectile);
             } else {
@@ -2919,11 +3094,6 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
 
       renderer.render(scene, camera);
       labelRenderer.render(scene, camera);
-
-      if (elapsed - lastPixelSample > 0.55) {
-        lastPixelSample = elapsed;
-        renderer.domElement.dataset.pixelStats = JSON.stringify(sampleCanvas());
-      }
     };
 
     animate();
