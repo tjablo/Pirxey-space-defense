@@ -546,17 +546,55 @@ export const createPlayerLaser = (
   const core = new THREE.Mesh(assets.coreGeometry, assets.coreMaterial);
   const beam = new THREE.Mesh(assets.beamGeometry, assets.beamMaterial);
   group.add(beam, core);
+
+  if (weaponId === "rail-splitter") {
+    const segmentCount = 14;
+    const turns = 1.65;
+    const radius = 0.25;
+    const length = 2.05;
+    const up = new THREE.Vector3(0, 1, 0);
+
+    beam.scale.set(1.25, 1.08, 1.25);
+    core.scale.set(1.08, 1.08, 1.08);
+
+    for (let index = 0; index < segmentCount; index += 1) {
+      const progress = index / (segmentCount - 1);
+      const angle = progress * Math.PI * 2 * turns;
+      const y = (progress - 0.5) * length;
+      const x = Math.cos(angle) * radius;
+      const z = Math.sin(angle) * radius;
+      const tangent = new THREE.Vector3(
+        -Math.sin(angle) * radius * turns * Math.PI * 2,
+        length,
+        Math.cos(angle) * radius * turns * Math.PI * 2
+      ).normalize();
+      const segmentRotation = new THREE.Quaternion().setFromUnitVectors(up, tangent);
+      const spiralBeam = new THREE.Mesh(assets.beamGeometry, assets.beamMaterial);
+      const spiralCore = new THREE.Mesh(assets.coreGeometry, assets.coreMaterial);
+
+      spiralBeam.position.set(x, y, z);
+      spiralCore.position.copy(spiralBeam.position);
+      spiralBeam.quaternion.copy(segmentRotation);
+      spiralCore.quaternion.copy(segmentRotation);
+      spiralBeam.scale.setScalar(0.64);
+      spiralBeam.scale.y = 0.18;
+      spiralCore.scale.setScalar(0.52);
+      spiralCore.scale.y = 0.16;
+      group.add(spiralBeam, spiralCore);
+    }
+  }
+
   group.position.copy(position);
   group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), normalizedDirection);
 
   return {
     id: projectileId++,
-    damage: weaponId === "rail-splitter" ? 2.6 : weaponId === "rapid-repeater" ? 0.72 : 0.86,
-    life: weaponId === "rail-splitter" ? 1.1 : 0.82,
+    damage: weaponId === "rail-splitter" ? 2.35 : weaponId === "rapid-repeater" ? 0.72 : 0.86,
+    life: weaponId === "rail-splitter" ? 0.92 : 0.82,
     mesh: group,
     owner: "player",
-    radius: weaponId === "rail-splitter" ? 0.42 : 0.26,
-    velocity: normalizedDirection.multiplyScalar(weaponId === "rail-splitter" ? 68 : 74),
+    radius: weaponId === "rail-splitter" ? 0.52 : 0.26,
+    velocity: normalizedDirection.multiplyScalar(74),
     weaponId
   };
 };

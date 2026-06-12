@@ -82,7 +82,7 @@ Primary weapons:
 
 - `Pulse Laser` - a fast, precise laser.
 - `Twin Cannons` - two side-mounted firing lanes.
-- `Rail Splitter` - a slower, heavier shot.
+- `Star Spiral Laser` - a rotating helix of laser energy around the firing axis.
 - `Rapid Repeater` - a high-fire-rate weapon for close-sector defense.
 
 Secondary weapons:

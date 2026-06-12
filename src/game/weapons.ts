@@ -53,12 +53,12 @@ export const WEAPON_CATALOG: Record<WeaponId, WeaponDefinition> = {
   },
   "rail-splitter": {
     id: "rail-splitter",
-    name: "Rail Splitter",
+    name: "Star Spiral Laser",
     slot: "primary",
     price: 260,
     ammoCapacity: 1800,
-    cooldown: 0.28,
-    description: "Heavy precise primary shot with stronger impact damage."
+    cooldown: 0.2,
+    description: "Spectacular primary laser that draws a rotating star-spiral around the firing axis."
   },
   "rapid-repeater": {
     id: "rapid-repeater",

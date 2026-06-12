@@ -1007,6 +1007,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     let lastPixelSample = 0;
     let lastNearbyKey = "";
     let fireCooldown = 0;
+    let starSpiralPhase = 0;
     let secondaryFireCooldown = 0;
     let waveCooldown = 4;
     let currentWave = 0;
@@ -1774,7 +1775,14 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
           projectilePosition.copy(ship.position).add(muzzleOffset);
           addProjectile(createPlayerBolt(projectilePosition, forward));
         }
-      } else if (weaponId === "pulse-laser" || weaponId === "rail-splitter" || weaponId === "rapid-repeater") {
+      } else if (weaponId === "rail-splitter") {
+        muzzleOffset.set(0, -0.02, -2.38).applyQuaternion(ship.quaternion);
+        projectilePosition.copy(ship.position).add(muzzleOffset);
+        const spiralLaser = createPlayerLaser(projectilePosition, forward, weaponId);
+        spiralLaser.mesh.rotateY(starSpiralPhase);
+        starSpiralPhase = (starSpiralPhase + Math.PI * 0.58) % (Math.PI * 2);
+        addProjectile(spiralLaser);
+      } else if (weaponId === "pulse-laser" || weaponId === "rapid-repeater") {
         muzzleOffset.set(0, -0.02, -2.34).applyQuaternion(ship.quaternion);
         projectilePosition.copy(ship.position).add(muzzleOffset);
         addProjectile(createPlayerLaser(projectilePosition, forward, weaponId));
@@ -2681,6 +2689,9 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
             projectile.mesh.rotation.x += delta * 1.6;
             projectile.mesh.rotation.y += delta * 2.2;
             projectile.mesh.rotation.z -= delta * 1.1;
+          }
+          if (projectile.weaponId === "rail-splitter") {
+            projectile.mesh.rotateY(delta * 16);
           }
           projectile.mesh.position.addScaledVector(projectile.velocity, delta);
           projectile.life -= delta;
