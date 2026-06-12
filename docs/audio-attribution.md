@@ -12,7 +12,7 @@ Space Explosion.wav by morganpurkis -- https://freesound.org/s/394128/ -- Licens
 
 The missile launch sound effect is an edited excerpt from:
 
-05780 space missile.wav by Robinhood76 -- https://freesound.org/s/273332/ -- License: Attribution NonCommercial 4.0
+Rocket Launch by gracenew -- https://freesound.org/s/857959/ -- License: Creative Commons 0
 
 The plasma secondary attack sound effect is an edited excerpt from:
 

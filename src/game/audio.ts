@@ -1,7 +1,7 @@
 import enemyExplosionUrl from "../assets/audio/morganpurkis-space-explosion.wav";
 import fusionFlashUrl from "../assets/audio/onlytheghosts-fusion-gun-flash.wav";
+import missileLaunchUrl from "../assets/audio/gracenew-rocket-launch.wav";
 import laserShotUrl from "../assets/audio/tannersound-laser-shot.wav";
-import missileLaunchUrl from "../assets/audio/robinhood76-space-missile.wav";
 
 export type GameAudio = {
   explosion: () => void;

@@ -1,29 +1,33 @@
-# Plan fal i eskalacji obcych form zycia
+# Alien Lifeform Wave Escalation Roadmap
 
-## Zasady stale
-- Gra startuje dopiero po potwierdzeniu komunikatu inwazji.
-- Przed kazda runda pojawia sie napis `Next round` i odliczanie.
-- Na poczatku rundy wszystkie zywe planety odzyskuja HP do 100%.
-- Planety zniszczone eksploduja i nie wracaja juz w kolejnych rundach.
-- Jezeli zniszczone zostana wszystkie planety, gra przechodzi w stan przegranej.
-- Fale sa nieskonczone; po fali 20 skaluje sie liczba przeciwnikow, HP i czestotliwosc ataku.
+## Persistent Rules
 
-## Harmonogram
-- Fale 1-2: jedna grupa atakuje jedna planete, tylko powolny pojedynczy pocisk.
-- Fale 3-4: dwie grupy moga atakowac dwie rozne planety, nadal pojedynczy pocisk.
-- Fala 5: przeciwnicy dostaja wiecej HP, czesc grup szybciej podchodzi do planety.
-- Fala 6: aktywuje sie wariant `burst-ready` w konfiguracji; w tej wersji nadal strzela pojedynczo, ale system jest gotowy na serie.
-- Fale 7-8: dwie lub trzy planety moga byc atakowane naraz.
-- Fala 9: aktywuje sie wariant `wave-ready`; docelowo pociski beda leciec falujac.
-- Fala 10: pierwsza mocna runda presji: wiecej przeciwnikow, krotszy cooldown ataku.
-- Fale 11-14: przeciwnicy skaluja szybkosc i HP.
-- Fala 15: docelowy mini-boss lub ciezsza grupa eskorty.
-- Fale 16-19: coraz wiecej grup rownoleglych i wieksza szybkosc pociskow.
-- Fala 20: prog late-game; dalsze fale skaluja sie matematycznie bez limitu.
+- The game starts only after the player confirms the invasion prompt.
+- Before each round, the UI shows `Next round` with a countdown.
+- At the start of each round, every surviving planet restores HP to 100%.
+- Destroyed planets explode and do not return in later rounds.
+- If all planets are destroyed, the match enters game over.
+- Waves are endless; after wave 20, enemy count, HP, and attack frequency scale mathematically.
 
-## Najblizsze rozszerzenia po obecnym etapie
-- Prawdziwy burst: kilka pociskow w krotkim odstepie.
-- Falujace pociski z sinusoidalna trajektoria.
-- Typ przeciwnika taranujacy planete.
-- Upgrade'y gracza po rundzie.
-- Nagrody za uratowanie wszystkich planet w fali.
+## Current Wave Schedule
+
+- Waves 1-2: one group attacks one planet with slow single-shot projectiles.
+- Waves 3-4: two groups can attack two different planets, still using single-shot projectiles.
+- Wave 5: the Death Star-style boss can appear; enemies gain more pressure and durability.
+- Wave 6: the `burst-ready` pattern is active in configuration. The current implementation still fires single shots, but the system is prepared for burst logic.
+- Waves 7-8: two or three planets can be attacked at the same time.
+- Wave 9: the `wave-ready` pattern is active. Future projectiles can use sine-wave movement.
+- Wave 10: first major pressure spike: more enemies and shorter attack cooldowns.
+- Waves 11-14: enemy speed, HP, and attack cadence continue scaling.
+- Wave 15: target milestone for a heavier escort group or additional mini-boss behavior.
+- Waves 16-19: more parallel groups and faster projectiles.
+- Wave 20: late-game threshold; later waves scale without a hard cap.
+
+## Planned Extensions
+
+- Real burst fire: several shots in short intervals.
+- Wavy projectiles using sinusoidal trajectories.
+- A ramming enemy type focused on planet damage.
+- Player upgrade choices after rounds.
+- Bonus rewards for saving all attacked planets in a wave.
+- More boss variants and elite escorts.

@@ -1,6 +1,6 @@
 # Pirxey Space Services
 
-Interaktywna makieta 3D / vertical slice gry kosmicznej inspirowanej identyfikacja i trescia strony Pirxey. Projekt laczy eksploracje ukladu planet-uslug z trybem obrony falowej: gracz lata statkiem, odwiedza planety, dokuje przy nich, kupuje uzbrojenie i broni planet przed atakami obcych form zycia.
+Interactive 3D space-game prototype inspired by Pirxey's visual identity and service positioning. The project combines a service-galaxy exploration mode with a wave-defense battle loop: the player flies a ship, visits service planets, docks to inspect service briefs, buys weapons, and protects the planets from hostile alien lifeforms.
 
 ## Stack
 
@@ -10,115 +10,129 @@ Interaktywna makieta 3D / vertical slice gry kosmicznej inspirowanej identyfikac
 - Three.js
 - Tailwind CSS
 - WebAudio API
+- PWA manifest and service worker
 
-## Uruchomienie
+## Running Locally
+
+Install dependencies:
 
 ```bash
 npm install
+```
+
+Start the local dev server:
+
+```bash
 npm run dev
 ```
 
-Domyslny adres dev servera:
+Default dev server URL:
 
 ```text
 http://127.0.0.1:5173/
 ```
 
-Build produkcyjny:
+To test on a phone connected to the same network, run Vite with a public host:
+
+```bash
+npx vite --host 0.0.0.0
+```
+
+Production build:
 
 ```bash
 npm run build
 ```
 
-Podglad buildu:
+Preview the production build:
 
 ```bash
 npm run preview
 ```
 
-## Glowna petla gry
+## Core Game Loop
 
-1. Po wejsciu na strone pojawia sie komunikat o inwazji.
-2. Gracz moze rozpoczac bitwe albo przejsc do eksploracji.
-3. W trybie eksploracji mozna latac miedzy planetami-uslugami Pirxey i dokowac, aby czytac opisy.
-4. W trybie bitwy startuja nieskonczone fale przeciwnikow.
-5. Przed kazda fala pojawia sie `Next round` z odliczaniem.
-6. Zywe planety odzyskuja HP na poczatku rundy.
-7. Zniszczone planety eksploduja i nie wracaja juz do meczu.
-8. Game over nastepuje po zniszczeniu statku gracza albo utracie wszystkich planet.
+1. The page opens with a space-bugs invasion prompt.
+2. The player can start the defense battle or enter exploration mode first.
+3. In exploration mode, the player flies between Pirxey service planets and docks to read service descriptions.
+4. In battle mode, endless waves of enemies attack the service planets.
+5. Each wave is preceded by a `Next round` countdown.
+6. Surviving planets restore HP at the start of each round.
+7. Destroyed planets explode and do not return during the current match.
+8. Game over happens when the player's ship is destroyed or all planets are lost.
 
-## Mechaniki
+## Gameplay Features
 
-- Realistyczna scena kosmiczna 3D z orbitami, gwiazda centralna, planetami-uslugami i statkiem gracza.
-- Manualne latanie, autopilot i dokowanie do planet.
-- Fale przeciwnikow atakujacych jedna lub kilka planet.
-- Wrogowie nie powinni przecinac planet ani slonca; maja separacje i podstawowe omijanie cial niebieskich.
-- Death Star boss pojawia sie od 5 fali, goni gracza i strzela wieloma dzialami.
-- Planety maja osobne HP, a statek gracza ma HP i feedback trafienia.
-- Mozliwy restart meczu albo powrot do eksploracji po game over.
-- Pauza zatrzymuje symulacje.
+- Real-time 3D space scene with orbital paths, a central star, service planets, and the player's ship.
+- Manual flight, autopilot, docking, and a mouse-aim camera mode.
+- Enemy waves attacking one or multiple planets.
+- Enemy movement avoids planets and the sun, with separation logic to reduce clustering.
+- A Death Star-style boss appears from wave 5, chases the player, and fires from multiple guns.
+- Planets have individual HP, and the player ship has HP with hit feedback.
+- Match restart and exploration fallback are available after game over.
+- Pause stops the active simulation.
+- Mobile touch controls support thrust, yaw, boost, braking, primary fire, secondary fire, and evasive rolls.
+- PWA metadata enables install-style behavior when hosted over HTTPS.
 
-## Uzbrojenie
+## Weapons
 
-Gracz ma domyslne `Scout Bolts` z nieskonczona amunicja. Kupowane bronie maja limit ammo i wymagaja reloadu w planetarnych sklepach.
+The player starts with `Scout Bolts`, which have unlimited ammo. Purchased weapons use limited ammo and must be reloaded at planetary armories.
 
-Primary:
+Primary weapons:
 
-- `Pulse Laser` - szybki, precyzyjny laser.
-- `Twin Cannons` - dwa boczne tory strzalu.
-- `Rail Splitter` - wolniejszy, mocniejszy strzal.
-- `Rapid Repeater` - bardzo szybka bron do obrony bliskiego sektora.
+- `Pulse Laser` - a fast, precise laser.
+- `Twin Cannons` - two side-mounted firing lanes.
+- `Rail Splitter` - a slower, heavier shot.
+- `Rapid Repeater` - a high-fire-rate weapon for close-sector defense.
 
-Secondary:
+Secondary weapons:
 
-- `Homing Missiles` - rakiety szukajace najblizszego celu w kierunku strzalu.
-- `Plasma Orb` - kula plazmowa z obrazeniami obszarowymi.
-- `Arc Pulse` - impuls elektryczny wokol statku.
+- `Homing Missiles` - missiles that look for the nearest target in the firing direction.
+- `Plasma Orb` - an area-damage plasma projectile.
+- `Arc Pulse` - an electric pulse around the player ship.
 
-## Sterowanie
+## Controls
 
-- `W` - ciag.
+- `W` - thrust.
 - `Shift` - boost.
 - `A` / `D` - yaw.
 - `ArrowUp` / `ArrowDown` - pitch.
-- `Space` / `C` - gora / dol.
-- `Q` / `E` - unik boczny w bitwie.
-- `F` lub lewy przycisk myszy - ciagly ogien primary.
-- `G` lub prawy przycisk myszy - ogien secondary.
-- `E` - dokowanie w eksploracji lub zakup/reload broni przy planecie w bitwie.
-- Przycisk trybu kamery pozwala przelaczac drag camera / mouse aim.
+- `Space` / `C` - ascend / descend.
+- `Q` / `E` - battle evasive roll.
+- `F` or left mouse button - continuous primary fire.
+- `G` or right mouse button - secondary fire.
+- `E` - dock in exploration mode, or buy/reload a weapon near a planet in battle mode.
+- Camera mode button / `V` - switch between drag camera and mouse aim.
 
 ## Audio
 
-Projekt korzysta z WebAudio API oraz lokalnych sampli WAV dla:
+The project uses the WebAudio API and local WAV samples for:
 
-- strzalow laserowych,
-- eksplozji wrogich statkow,
-- rakiet,
-- atakow plazmowych,
-- muzyki bitwy odtwarzanej z folderu `soundtrack/`.
+- laser shots,
+- enemy ship explosions,
+- missile launches,
+- plasma attacks,
+- battle music loaded from the `soundtrack/` folder.
 
-Szczegoly licencji i atrybucji sa w [docs/audio-attribution.md](docs/audio-attribution.md).
+License details and attribution are documented in [docs/audio-attribution.md](docs/audio-attribution.md).
 
-Wazne: jeden z efektow (`05780 space missile.wav`) ma licencje `Attribution NonCommercial 4.0`, wiec przy komercyjnym wykorzystaniu projektu trzeba go wymienic albo uzyskac osobna zgode autora.
-
-## Struktura projektu
+## Project Structure
 
 ```text
-src/components/SpaceExperience.tsx  # glowna scena React + integracja runtime
-src/game/audio.ts                   # WebAudio, sample, soundtrack effects
-src/game/factories.ts               # fabryki statkow, pociskow, wrogow, efektow 3D
-src/game/types.ts                   # typy runtime gry
-src/game/waves.ts                   # konfiguracja fal i spawnow
-src/game/weapons.ts                 # katalog broni, ceny, ammo i oferty planet
-src/game/textures.ts                # proceduralne tekstury i sprite glow
-src/game/math.ts                    # helpery matematyczne
-src/data/services.ts                # planety-uslugi Pirxey
-docs/space-defense-plan.md          # pierwotny plan rozbudowy gry
-docs/wave-roadmap.md                # plan eskalacji fal
-docs/audio-attribution.md           # licencje audio
+src/components/SpaceExperience.tsx  # main React scene and runtime integration
+src/game/audio.ts                   # WebAudio, samples, soundtrack effects
+src/game/factories.ts               # 3D factories for ships, projectiles, enemies, effects
+src/game/types.ts                   # shared runtime types
+src/game/waves.ts                   # wave configuration and spawning rules
+src/game/weapons.ts                 # weapon catalog, pricing, ammo, planet offers
+src/game/textures.ts                # procedural textures and glow sprites
+src/game/math.ts                    # math helpers
+src/data/services.ts                # Pirxey service planets
+docs/space-defense-plan.md          # original game expansion plan
+docs/wave-roadmap.md                # wave escalation roadmap
+docs/audio-attribution.md           # audio attribution and licenses
 ```
 
 ## Status
 
-To jest grywalny prototype / vertical slice jednej mapy. Priorytetem sa teraz balans walki, czytelnosc UI, feedback audio-wizualny, performance przy falach i dalsze typy przeciwnikow oraz upgrade'y roguelike.
+This is a playable vertical slice built around a single map. Current priorities are combat balance, mobile ergonomics, UI readability, audio-visual feedback, wave performance, additional enemy types, and future roguelike upgrade choices.
