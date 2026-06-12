@@ -38,7 +38,7 @@ export const WEAPON_CATALOG: Record<WeaponId, WeaponDefinition> = {
     name: "Pulse Laser",
     slot: "primary",
     price: 180,
-    ammoCapacity: 1800,
+    ammoCapacity: 420,
     cooldown: 0.1,
     description: "Fast focused laser fire with high projectile speed and clean aim feedback."
   },
@@ -47,7 +47,7 @@ export const WEAPON_CATALOG: Record<WeaponId, WeaponDefinition> = {
     name: "Twin Cannons",
     slot: "primary",
     price: 220,
-    ammoCapacity: 1200,
+    ammoCapacity: 240,
     cooldown: 0.18,
     description: "Two synchronized side guns mounted on the left and right side of the scout."
   },
@@ -56,7 +56,7 @@ export const WEAPON_CATALOG: Record<WeaponId, WeaponDefinition> = {
     name: "Star Spiral Laser",
     slot: "primary",
     price: 260,
-    ammoCapacity: 1200,
+    ammoCapacity: 160,
     cooldown: 0.2,
     description: "Spectacular primary laser that draws a rotating star-spiral around the firing axis."
   },
@@ -65,7 +65,7 @@ export const WEAPON_CATALOG: Record<WeaponId, WeaponDefinition> = {
     name: "Rapid Repeater",
     slot: "primary",
     price: 240,
-    ammoCapacity: 1600,
+    ammoCapacity: 420,
     cooldown: 0.07,
     description: "Light rapid-fire primary weapon for close defensive sweeps."
   },
@@ -74,7 +74,7 @@ export const WEAPON_CATALOG: Record<WeaponId, WeaponDefinition> = {
     name: "Homing Missiles",
     slot: "secondary",
     price: 280,
-    ammoCapacity: 100,
+    ammoCapacity: 22,
     cooldown: 0.92,
     description: "Right-click missile that tracks a hostile and can clip one target packed tightly nearby."
   },
@@ -83,7 +83,7 @@ export const WEAPON_CATALOG: Record<WeaponId, WeaponDefinition> = {
     name: "Plasma Orb",
     slot: "secondary",
     price: 320,
-    ammoCapacity: 80,
+    ammoCapacity: 20,
     cooldown: 1.1,
     description: "Slow unstable orb that bursts after a short flight and damages a nearby cluster."
   },
@@ -92,7 +92,7 @@ export const WEAPON_CATALOG: Record<WeaponId, WeaponDefinition> = {
     name: "Arc Pulse",
     slot: "secondary",
     price: 350,
-    ammoCapacity: 60,
+    ammoCapacity: 8,
     cooldown: 2.4,
     description: "Close-range electric impulse around the ship that destroys nearby hostiles."
   }

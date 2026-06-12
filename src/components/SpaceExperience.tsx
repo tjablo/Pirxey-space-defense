@@ -107,6 +107,8 @@ type PlanetHudItem = {
 
 type WeaponAmmoState = Partial<Record<WeaponId, number>>;
 
+const PLASMA_DEATH_STAR_DAMAGE_MULTIPLIER = 1.8;
+
 type PlanetRuntime = {
   service: ServicePlanet;
   orbit: THREE.Object3D;
@@ -1717,7 +1719,8 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
           const coreRadius = radius * (isPlasma ? 0.68 : 0.48);
           const falloff =
             distance <= coreRadius ? 1 : clamp(1 - (distance - coreRadius) / Math.max(radius - coreRadius, 0.1), 0.58, 1);
-          damageEnemy(enemy, projectile.damage * falloff, blastOrigin);
+          const damageMultiplier = isPlasma && enemy.kind === "death-star" ? PLASMA_DEATH_STAR_DAMAGE_MULTIPLIER : 1;
+          damageEnemy(enemy, projectile.damage * falloff * damageMultiplier, blastOrigin);
         }
       }
       removeProjectile(projectile);
