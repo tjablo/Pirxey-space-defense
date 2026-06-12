@@ -35,7 +35,7 @@ Turn the 3D service-galaxy mockup into a playable vertical slice: one map, enemy
 - `F` or left mouse button - primary fire.
 - `G` or right mouse button - secondary fire.
 - `Q` / `E` - evasive roll in battle.
-- `E` - dock near a planet in exploration, or buy/reload a weapon at a nearby armory in battle.
+- `R` - dock near a planet in exploration, or buy/reload a weapon at a nearby armory in battle.
 - Mouse drag - camera/ship look.
 - `V` - toggle camera mode.
 

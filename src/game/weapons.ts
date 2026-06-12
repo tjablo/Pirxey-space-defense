@@ -31,7 +31,7 @@ export const WEAPON_CATALOG: Record<WeaponId, WeaponDefinition> = {
     price: 0,
     ammoCapacity: null,
     cooldown: 0.32,
-    description: "Standard fallback defense bolts. Infinite ammo, but slower and weaker than purchased weapons."
+    description: "Infinite fallback bolts with steady damage."
   },
   "pulse-laser": {
     id: "pulse-laser",
@@ -40,7 +40,7 @@ export const WEAPON_CATALOG: Record<WeaponId, WeaponDefinition> = {
     price: 180,
     ammoCapacity: 420,
     cooldown: 0.1,
-    description: "Fast focused laser fire with high projectile speed and clean aim feedback."
+    description: "Fast focused laser with clean long-range aim."
   },
   "twin-cannons": {
     id: "twin-cannons",
@@ -49,7 +49,7 @@ export const WEAPON_CATALOG: Record<WeaponId, WeaponDefinition> = {
     price: 220,
     ammoCapacity: 240,
     cooldown: 0.18,
-    description: "Two synchronized side guns mounted on the left and right side of the scout."
+    description: "Dual side guns for wider forward fire."
   },
   "rail-splitter": {
     id: "rail-splitter",
@@ -58,7 +58,7 @@ export const WEAPON_CATALOG: Record<WeaponId, WeaponDefinition> = {
     price: 260,
     ammoCapacity: 160,
     cooldown: 0.2,
-    description: "Spectacular primary laser that draws a rotating star-spiral around the firing axis."
+    description: "Rotating spiral laser for dense targets."
   },
   "rapid-repeater": {
     id: "rapid-repeater",
@@ -67,7 +67,7 @@ export const WEAPON_CATALOG: Record<WeaponId, WeaponDefinition> = {
     price: 240,
     ammoCapacity: 420,
     cooldown: 0.07,
-    description: "Light rapid-fire primary weapon for close defensive sweeps."
+    description: "Rapid primary fire for close defense."
   },
   "homing-missiles": {
     id: "homing-missiles",
@@ -76,7 +76,7 @@ export const WEAPON_CATALOG: Record<WeaponId, WeaponDefinition> = {
     price: 280,
     ammoCapacity: 22,
     cooldown: 0.92,
-    description: "Right-click missile that tracks a hostile and can clip one target packed tightly nearby."
+    description: "Tracking missiles for priority targets."
   },
   "plasma-orb": {
     id: "plasma-orb",
@@ -85,7 +85,7 @@ export const WEAPON_CATALOG: Record<WeaponId, WeaponDefinition> = {
     price: 320,
     ammoCapacity: 20,
     cooldown: 1.1,
-    description: "Slow unstable orb that bursts after a short flight and damages a nearby cluster."
+    description: "Slow orb that bursts into cluster damage."
   },
   "arc-pulse": {
     id: "arc-pulse",
@@ -94,7 +94,7 @@ export const WEAPON_CATALOG: Record<WeaponId, WeaponDefinition> = {
     price: 350,
     ammoCapacity: 8,
     cooldown: 2.4,
-    description: "Close-range electric impulse around the ship that destroys nearby hostiles."
+    description: "Close-range pulse against nearby hostiles."
   }
 };
 

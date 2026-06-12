@@ -71,7 +71,7 @@ npm run preview
 - Planets have individual HP, and the player ship has HP with hit feedback.
 - Match restart and exploration fallback are available after game over.
 - Pause stops the active simulation.
-- Mobile touch controls support thrust, yaw, boost, braking, primary fire, secondary fire, and evasive rolls.
+- Mobile touch controls support forward thrust, nitro, braking, primary fire, secondary fire, and evasive rolls.
 - PWA metadata enables install-style behavior when hosted over HTTPS.
 
 ## Weapons
@@ -101,7 +101,7 @@ Secondary weapons:
 - `Q` / `E` - battle evasive roll.
 - `F` or left mouse button - continuous primary fire.
 - `G` or right mouse button - secondary fire.
-- `E` - dock in exploration mode, or buy/reload a weapon near a planet in battle mode.
+- `R` - dock in exploration mode, or buy/reload a weapon near a planet in battle mode.
 - Camera mode button / `V` - switch between drag camera and mouse aim.
 
 ## Audio

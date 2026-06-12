@@ -602,6 +602,14 @@ canvas.is-pointer-locked {
     transform 220ms ease;
 }
 
+.controls-panel {
+  max-height: min(680px, calc(100dvh - var(--safe-top) - var(--safe-bottom) - 150px));
+  overflow: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+
 .hud-panel.is-hidden {
   display: none;
 }
@@ -609,6 +617,9 @@ canvas.is-pointer-locked {
 .service-panel {
   max-height: min(620px, calc(100vh - 140px));
   overflow: hidden;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
   transition:
     opacity 220ms ease,
     transform 220ms ease;
@@ -1061,9 +1072,9 @@ canvas.is-pointer-locked {
 
 .weapon-shop-bubble {
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   width: min(430px, calc(100vw - 32px));
   border: 1px solid rgba(255, 207, 101, 0.34);
   border-radius: 8px;
@@ -1077,24 +1088,11 @@ canvas.is-pointer-locked {
   backdrop-filter: blur(18px);
 }
 
-.weapon-shop-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 999px;
-  background: rgba(255, 207, 101, 0.14);
-  color: #ffcf65;
-  box-shadow: inset 0 0 18px rgba(255, 207, 101, 0.12);
-}
-
 .weapon-shop-copy {
   min-width: 0;
 }
 
-.weapon-shop-copy > span,
-.weapon-shop-copy small {
+.weapon-shop-copy > span {
   display: block;
   overflow: hidden;
   color: rgba(249, 249, 234, 0.54);
@@ -1105,13 +1103,6 @@ canvas.is-pointer-locked {
   text-overflow: ellipsis;
   text-transform: uppercase;
   white-space: nowrap;
-}
-
-.weapon-shop-copy small span {
-  display: inline;
-  color: inherit;
-  font: inherit;
-  text-transform: inherit;
 }
 
 .weapon-shop-copy strong {
@@ -1135,7 +1126,49 @@ canvas.is-pointer-locked {
   font-size: 11px;
   line-height: 1.25;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 1;
+  -webkit-line-clamp: 2;
+}
+
+.weapon-shop-action {
+  display: grid;
+  min-width: 104px;
+  align-content: center;
+  gap: 6px;
+}
+
+.weapon-shop-price {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 6px;
+  max-width: 100%;
+  margin: 0;
+  border: 1px solid rgba(255, 207, 101, 0.42);
+  border-radius: 999px;
+  background: rgba(255, 207, 101, 0.14);
+  color: #ffcf65;
+  padding: 4px 9px;
+  box-shadow: 0 0 22px rgba(255, 207, 101, 0.14);
+}
+
+.weapon-shop-price span {
+  color: rgba(249, 249, 234, 0.62);
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.weapon-shop-price strong {
+  overflow: visible;
+  margin-top: 0;
+  color: #ffcf65;
+  font-size: 17px;
+  line-height: 1;
+  text-overflow: clip;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .weapon-shop-bubble button {
@@ -1143,6 +1176,7 @@ canvas.is-pointer-locked {
   align-items: center;
   justify-content: center;
   min-height: 32px;
+  width: 100%;
   border: 1px solid rgba(255, 207, 101, 0.44);
   border-radius: 999px;
   background: rgba(255, 207, 101, 0.16);
@@ -1191,7 +1225,8 @@ canvas.is-pointer-locked {
   display: flex;
   align-items: stretch;
   justify-content: flex-end;
-  padding: 18px;
+  padding: calc(var(--safe-top) + 18px) calc(var(--safe-right) + 18px) calc(var(--safe-bottom) + 18px)
+    calc(var(--safe-left) + 18px);
   background:
     linear-gradient(90deg, rgba(6, 4, 17, 0) 0%, rgba(6, 4, 17, 0.18) 46%, rgba(6, 4, 17, 0.68) 100%),
     radial-gradient(circle at 26% 44%, rgba(90, 166, 189, 0.08), transparent 34%);
@@ -1202,8 +1237,12 @@ canvas.is-pointer-locked {
   position: relative;
   width: min(470px, calc(100vw - 36px));
   max-height: calc(100vh - 36px);
+  max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 36px);
   align-self: center;
   overflow: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
   border: 1px solid rgba(6, 4, 17, 0.1);
   border-radius: 8px;
   background:
@@ -1335,7 +1374,8 @@ canvas.is-pointer-locked {
 
   .dock-modal {
     width: min(720px, calc(100vw - 28px));
-    max-height: min(64vh, 620px);
+    max-height: min(82dvh, 620px);
+    max-height: min(calc(100dvh - var(--safe-top) - var(--safe-bottom) - 28px), 620px);
   }
 }
 
@@ -1366,7 +1406,7 @@ canvas.is-pointer-locked {
   }
 
   .mobile-control-cluster-left {
-    width: min(146px, 43vw);
+    width: min(138px, 42vw);
   }
 
   .mobile-control-cluster-right {
@@ -1378,10 +1418,13 @@ canvas.is-pointer-locked {
     padding: 5px;
   }
 
-  .mobile-throttle-row {
+  .mobile-throttle-stack {
     display: grid;
-    grid-template-columns: 36px minmax(44px, 1fr) 36px;
-    gap: 5px;
+    grid-template-areas:
+      "forward ."
+      "brake nitro";
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
   }
 
   .mobile-control-row,
@@ -1449,6 +1492,33 @@ canvas.is-pointer-locked {
     min-height: 42px;
     border-color: rgba(215, 71, 33, 0.45);
     background: rgba(215, 71, 33, 0.18);
+  }
+
+  .mobile-throttle-stack .mobile-control-button {
+    min-height: 58px;
+    border-radius: 8px;
+  }
+
+  .mobile-throttle-stack .mobile-control-button.is-thrust {
+    grid-area: forward;
+  }
+
+  .mobile-throttle-stack .mobile-control-button.is-brake {
+    grid-area: brake;
+  }
+
+  .mobile-throttle-stack .mobile-control-button.is-boost {
+    grid-area: nitro;
+  }
+
+  .mobile-throttle-stack .mobile-control-icon {
+    width: 22px;
+    height: 22px;
+  }
+
+  .mobile-throttle-stack .mobile-control-icon svg {
+    width: 21px;
+    height: 21px;
   }
 
   .mobile-control-button.is-boost {
@@ -1577,8 +1647,11 @@ canvas.is-pointer-locked {
   }
 
   .hud-panel {
-    max-height: min(48vh, 390px);
+    max-height: min(58dvh, 430px);
     overflow: auto;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
     padding: 12px;
   }
 
@@ -1590,9 +1663,12 @@ canvas.is-pointer-locked {
     z-index: 33;
     width: auto;
     max-width: none;
-    max-height: min(50dvh, 390px);
+    max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 108px);
     align-self: auto;
     overflow: auto;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
     padding: 10px;
   }
 
@@ -1900,16 +1976,11 @@ canvas.is-pointer-locked {
     bottom: calc(222px + env(safe-area-inset-bottom));
     left: 50%;
     z-index: 25;
-    width: min(246px, calc(100vw - 108px));
-    grid-template-columns: 22px minmax(0, 1fr) 30px;
+    width: min(280px, calc(100vw - 108px));
+    grid-template-columns: minmax(0, 1fr) 72px;
     gap: 5px;
     padding: 5px;
     transform: translateX(-50%);
-  }
-
-  .weapon-shop-icon {
-    width: 22px;
-    height: 22px;
   }
 
   .weapon-shop-copy strong {
@@ -1917,20 +1988,29 @@ canvas.is-pointer-locked {
   }
 
   .weapon-shop-copy p {
-    display: none;
-  }
-
-  .weapon-shop-copy small {
-    display: flex;
-    max-height: 24px;
-    flex-wrap: wrap;
-    gap: 1px 5px;
-    white-space: normal;
-  }
-
-  .weapon-shop-copy small span {
-    font-size: 7px;
+    max-width: none;
+    margin: 2px 0 0;
+    font-size: 9px;
     line-height: 1.2;
+    -webkit-line-clamp: 2;
+  }
+
+  .weapon-shop-action {
+    min-width: 72px;
+    gap: 4px;
+  }
+
+  .weapon-shop-price {
+    gap: 4px;
+    padding: 3px 6px;
+  }
+
+  .weapon-shop-price span {
+    font-size: 7px;
+  }
+
+  .weapon-shop-price strong {
+    font-size: 14px;
   }
 
   .weapon-shop-bubble button {
@@ -2199,7 +2279,7 @@ canvas.is-pointer-locked {
   }
 
   .mobile-control-cluster-left {
-    width: 128px;
+    width: 126px;
   }
 
   .mobile-control-cluster-right {
@@ -2210,8 +2290,8 @@ canvas.is-pointer-locked {
     width: 132px;
   }
 
-  .mobile-throttle-row {
-    grid-template-columns: 32px minmax(38px, 1fr) 32px;
+  .mobile-throttle-stack {
+    gap: 6px;
   }
 
   .mobile-control-button {
@@ -2220,6 +2300,10 @@ canvas.is-pointer-locked {
 
   .mobile-control-button.is-thrust {
     min-height: 38px;
+  }
+
+  .mobile-throttle-stack .mobile-control-button {
+    min-height: 52px;
   }
 
   .mobile-control-button.is-fire {
@@ -2260,8 +2344,11 @@ canvas.is-pointer-locked {
 
   .hud-panel,
   .service-panel {
-    max-height: calc(100dvh - 86px);
+    max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 86px);
     overflow: auto;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
     padding: 10px;
   }
 
@@ -2273,9 +2360,12 @@ canvas.is-pointer-locked {
     z-index: 33;
     width: auto;
     max-width: none;
-    max-height: calc(100dvh - 122px);
+    max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 122px);
     align-self: auto;
     overflow: auto;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
     padding: 9px;
   }
 
@@ -2330,8 +2420,8 @@ canvas.is-pointer-locked {
     bottom: auto;
     left: 50%;
     z-index: 32;
-    width: min(260px, calc(100vw - 300px));
-    grid-template-columns: 22px minmax(0, 1fr) 30px;
+    width: min(284px, calc(100vw - 300px));
+    grid-template-columns: minmax(0, 1fr) 70px;
     gap: 5px;
     border-color: rgba(255, 207, 101, 0.44);
     background:
@@ -2344,30 +2434,34 @@ canvas.is-pointer-locked {
     transform: translateX(-50%);
   }
 
-  .weapon-shop-icon {
-    width: 22px;
-    height: 22px;
-  }
-
   .weapon-shop-copy strong {
     font-size: 10px;
   }
 
   .weapon-shop-copy p {
-    display: none;
-  }
-
-  .weapon-shop-copy small {
-    display: flex;
-    max-height: 19px;
-    flex-wrap: wrap;
-    gap: 1px 5px;
-    white-space: normal;
-  }
-
-  .weapon-shop-copy small span {
-    font-size: 7px;
+    max-width: none;
+    margin: 2px 0 0;
+    font-size: 9px;
     line-height: 1.2;
+    -webkit-line-clamp: 2;
+  }
+
+  .weapon-shop-action {
+    min-width: 70px;
+    gap: 4px;
+  }
+
+  .weapon-shop-price {
+    gap: 4px;
+    padding: 3px 6px;
+  }
+
+  .weapon-shop-price span {
+    font-size: 7px;
+  }
+
+  .weapon-shop-price strong {
+    font-size: 13px;
   }
 
   .weapon-shop-bubble button {
@@ -2462,7 +2556,7 @@ canvas.is-pointer-locked {
 
   .weapon-shop-bubble {
     bottom: calc(var(--safe-bottom) + 222px);
-    width: min(246px, calc(100vw - var(--safe-left) - var(--safe-right) - 108px));
+    width: min(280px, calc(100vw - var(--safe-left) - var(--safe-right) - 108px));
   }
 }
 
@@ -2515,6 +2609,6 @@ canvas.is-pointer-locked {
 
   .weapon-shop-bubble {
     top: calc(var(--safe-top) + 8px);
-    width: min(260px, calc(100vw - var(--safe-left) - var(--safe-right) - 300px));
+    width: min(284px, calc(100vw - var(--safe-left) - var(--safe-right) - 300px));
   }
 }

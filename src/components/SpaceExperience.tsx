@@ -14,7 +14,6 @@ import {
   Radio,
   RotateCcw,
   Rocket,
-  ShoppingBag,
   Telescope,
   Target,
   Volume2,
@@ -170,6 +169,9 @@ declare global {
 }
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+const DODGE_DURATION = 0.56;
+const DODGE_DISTANCE = 1.55;
+const DODGE_ROLL_ANGLE = (Math.PI * 7) / 18;
 const ENEMY_HIT_FLASH_DURATION = 0.28;
 const WAVE_PREP_DURATION = 10;
 const WAVE_STAGING_FRAME_BUDGET_MS = 1.6;
@@ -1049,6 +1051,10 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     let shipHitFlash = 0;
     let thrustHold = 0;
     let flamePower = 0;
+    let dodgeDirection = 0;
+    let dodgeElapsed = DODGE_DURATION;
+    let dodgePreviousInput = 0;
+    let dodgeOffset = 0;
     const keys = new Set<string>();
     const enemies: EnemyRuntime[] = [];
     const stagedEnemies: StagedEnemy[] = [];
@@ -2266,10 +2272,11 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
         event.preventDefault();
       }
       keys.add(event.code);
-      if (event.code === "KeyE") {
+      if (event.code === "KeyR" && !event.ctrlKey && !event.metaKey && !event.altKey) {
         if (useNearbyArmory()) {
           event.preventDefault();
         } else {
+          event.preventDefault();
           dockCurrent();
         }
       }
@@ -2447,6 +2454,9 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       secondaryFireHeld = false;
       clearTouchHoldFire();
       touchInputRef.current = createTouchFlightInput();
+      dodgeDirection = 0;
+      dodgeElapsed = DODGE_DURATION;
+      dodgePreviousInput = 0;
       dragging = false;
     };
 
@@ -2709,9 +2719,12 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
         !autopilotTarget.active &&
         !shipDestroyed &&
         (keys.has("KeyW") || touchInput.thrust || touchInput.boost);
-      let dodgeInput = 0;
 
       if (dockedTarget.active) {
+        dodgeDirection = 0;
+        dodgeElapsed = DODGE_DURATION;
+        dodgePreviousInput = 0;
+        dodgeOffset = 0;
         const dockRuntime =
           planetRuntimes.find((planet) => planet.service.id === dockedTarget.id) ?? selectedRuntime;
         dockRuntime.group.getWorldPosition(targetWorld);
@@ -2729,6 +2742,10 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
         shipAim.copy(ship.position).add(dockTangent);
         aimShipAt(shipAim, 1 - Math.pow(0.002, delta));
       } else if (autopilotTarget.active) {
+        dodgeDirection = 0;
+        dodgeElapsed = DODGE_DURATION;
+        dodgePreviousInput = 0;
+        dodgeOffset = 0;
         const targetRuntime =
           planetRuntimes.find((planet) => planet.service.id === autopilotTarget.id && !planet.destroyed) ??
           activePlanets()[0];
@@ -2772,24 +2789,47 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
           -1,
           1
         );
-        const roll = clamp(
-          (keys.has("KeyQ") ? 1 : 0) -
-            (keys.has("KeyE") ? 1 : 0) +
-            (touchInput.rollLeft ? 1 : 0) -
-            (touchInput.rollRight ? 1 : 0),
+        const dodgeInputRaw = clamp(
+          (keys.has("KeyE") ? 1 : 0) -
+            (keys.has("KeyQ") ? 1 : 0) +
+            (touchInput.rollRight ? 1 : 0) -
+            (touchInput.rollLeft ? 1 : 0),
           -1,
           1
         );
-        dodgeInput = roll;
+        if (dodgeInputRaw !== 0 && (dodgePreviousInput === 0 || dodgeDirection !== dodgeInputRaw)) {
+          dodgeDirection = dodgeInputRaw;
+          dodgeElapsed = 0;
+        }
+        if (dodgeInputRaw !== 0) {
+          dodgeElapsed = Math.min(DODGE_DURATION, dodgeElapsed + delta);
+        }
+        dodgePreviousInput = dodgeInputRaw;
         ship.rotation.y += yaw * delta * 1.42;
         ship.rotation.x = clamp(ship.rotation.x + pitch * delta * 1.05, -0.98, 0.98);
-        ship.rotation.z += roll * delta * 2.15;
-        ship.rotation.z *= 1 - delta * 0.62;
 
         forward.set(0, 0, -1).applyQuaternion(ship.quaternion).normalize();
-        if (roll !== 0) {
-          shipRight.set(1, 0, 0).applyQuaternion(ship.quaternion).normalize();
-          velocity.addScaledVector(shipRight, -roll * (boostPressed ? 28 : 20) * delta);
+        const dodgeTarget = dodgeInputRaw * DODGE_DISTANCE;
+        const dodgeResponse = 1 - Math.pow(dodgeInputRaw !== 0 ? 0.0015 : 0.012, delta);
+        const nextDodgeOffset = dodgeOffset + (dodgeTarget - dodgeOffset) * dodgeResponse;
+        const dodgeStep = nextDodgeOffset - dodgeOffset;
+        dodgeOffset = nextDodgeOffset;
+        if (Math.abs(dodgeStep) > 0.0001) {
+          shipRight.set(-forward.z, 0, forward.x).normalize();
+          ship.position.addScaledVector(shipRight, dodgeStep);
+        }
+        if (dodgeInputRaw !== 0) {
+          const dodgeProgress = dodgeElapsed / DODGE_DURATION;
+          const easedProgress = 1 - Math.pow(1 - dodgeProgress, 2);
+          const rollTarget = easedProgress * DODGE_ROLL_ANGLE * dodgeDirection;
+          ship.rotation.z += (rollTarget - ship.rotation.z) * (1 - Math.pow(0.0008, delta));
+        } else {
+          ship.rotation.z *= 1 - delta * 4.4;
+          if (Math.abs(ship.rotation.z) < 0.001) {
+            ship.rotation.z = 0;
+            dodgeDirection = 0;
+            dodgeElapsed = DODGE_DURATION;
+          }
         }
         const thrust = manualThrusting ? (boostPressed ? 32 : 17) : 0;
         if (thrust > 0) {
@@ -2807,7 +2847,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       }
 
       velocity.multiplyScalar(1 - delta * 0.12);
-      velocity.clampLength(0, dodgeInput !== 0 ? (boostPressed ? 42 : 38) : 34);
+      velocity.clampLength(0, 34);
       thrustHold = manualThrusting ? clamp(thrustHold + delta * (boostPressed ? 0.92 : 0.72), 0, 1) : Math.max(0, thrustHold - delta * 2.8);
       const speedRatio = clamp(velocity.length() / 34, 0, 1);
       const targetFlamePower = manualThrusting
@@ -3152,10 +3192,6 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     Boolean(offeredWeapon) && offeredWeaponCapacity !== null && offeredWeaponAmmo < offeredWeaponCapacity;
   const offeredWeaponNeedsPayment = Boolean(offeredWeapon) && (!offeredWeaponOwned || offeredWeaponNeedsReload);
   const offeredWeaponAffordable = offeredWeapon ? !offeredWeaponNeedsPayment || credits >= offeredWeapon.price : false;
-  const offeredWeaponAmmoStatus =
-    offeredWeaponCapacity === null
-      ? "Ammo INF"
-      : `Ammo ${Math.max(0, Math.floor(offeredWeaponAmmo))}/${offeredWeaponCapacity}`;
   const offeredWeaponAction = !offeredWeaponOwned
     ? "Buy"
     : offeredWeaponNeedsReload
@@ -3163,13 +3199,6 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       : offeredWeaponEquipped
         ? "Equipped"
         : "Equip";
-  const offeredWeaponStatus = offeredWeaponEquipped
-    ? "Equipped"
-    : offeredWeaponOwned
-      ? offeredWeaponNeedsReload
-        ? "Reload"
-        : "Owned"
-      : "New";
   const offeredWeaponPriceLabel = offeredWeapon ? `${offeredWeapon.price} cr` : "";
 
   return (
@@ -3214,45 +3243,29 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       {!dockedService && gamePhase !== "Awaiting" && gamePhase !== "Game over" ? (
         <div className="mobile-flight-controls" aria-label="Touch flight controls">
           <div className="mobile-control-cluster mobile-control-cluster-left mobile-throttle-cluster">
-            <MobileFlightButton
-              label="Boost"
-              className="is-compact is-boost"
-              icon={<ChevronsUp />}
-              pressInput={{ boost: true }}
-              setTouchInput={setTouchInput}
-            />
-            <div className="mobile-throttle-row" aria-label="Touch thrust and yaw">
+            <div className="mobile-throttle-stack" aria-label="Touch throttle controls">
               <MobileFlightButton
-                label="Yaw"
-                ariaLabel="Yaw left"
-                className="is-icon-only"
-                icon={<ChevronLeft />}
-                pressInput={{ yawLeft: true }}
-                setTouchInput={setTouchInput}
-              />
-              <MobileFlightButton
-                label="Thrust"
-                className="is-thrust"
+                label="Forward"
+                className="is-thrust is-throttle-action"
                 icon={<Rocket />}
                 pressInput={{ thrust: true }}
                 setTouchInput={setTouchInput}
               />
               <MobileFlightButton
-                label="Yaw"
-                ariaLabel="Yaw right"
-                className="is-icon-only"
-                icon={<ChevronRight />}
-                pressInput={{ yawRight: true }}
+                label="Brake"
+                className="is-brake is-throttle-action"
+                icon={<Gauge />}
+                pressInput={{ brake: true }}
+                setTouchInput={setTouchInput}
+              />
+              <MobileFlightButton
+                label="Nitro"
+                className="is-boost is-throttle-action"
+                icon={<ChevronsUp />}
+                pressInput={{ boost: true }}
                 setTouchInput={setTouchInput}
               />
             </div>
-            <MobileFlightButton
-              label="Brake"
-              className="is-compact is-brake"
-              icon={<Gauge />}
-              pressInput={{ brake: true }}
-              setTouchInput={setTouchInput}
-            />
           </div>
 
           <div className={`mobile-control-cluster mobile-control-cluster-right ${canUseNavigation ? "mobile-navigation-cluster" : ""}`}>
@@ -3534,7 +3547,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
               <ControlHint icon={<Compass />} label="A / D" value="yaw" />
               <ControlHint icon={<MousePointer2 />} label="Drag" value="look around" />
               <ControlHint icon={<MousePointer2 />} label="V" value="toggle camera" />
-              <ControlHint icon={<Target />} label="E" value={canUseNavigation ? "dock nearby" : "disabled in battle"} />
+              <ControlHint icon={<Target />} label="R" value={canUseNavigation ? "dock nearby" : "disabled in battle"} />
               <ControlHint icon={<Crosshair />} label="Hold Click / F" value="fire cannons" />
               <ControlHint icon={<Zap />} label="Right Click / G" value={activeSecondaryWeapon ? activeSecondaryWeapon.name : "buy secondary"} />
               <ControlHint icon={<Navigation />} label="Space / C" value="vertical" />
@@ -3612,30 +3625,27 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
           <div className="pointer-events-none hud-action-slot order-1 flex min-h-[170px] items-end justify-center lg:order-2">
             {nearbyWeaponOffer && offeredWeapon ? (
               <div className="pointer-events-auto weapon-shop-bubble">
-                <div className="weapon-shop-icon">
-                  <ShoppingBag className="h-4 w-4" />
-                </div>
                 <div className="weapon-shop-copy">
                   <span>{nearbyWeaponOffer.planetName} armory</span>
                   <strong>{offeredWeapon.name}</strong>
                   <p>{offeredWeapon.description}</p>
-                  <small>
-                    <span>{offeredWeapon.slot}</span>
-                    <span>{offeredWeaponAmmoStatus}</span>
-                    <span>Price {offeredWeaponPriceLabel}</span>
-                    <span>{offeredWeaponStatus}</span>
-                  </small>
                 </div>
-                <button
-                  className={offeredWeaponNeedsPayment && !offeredWeaponAffordable ? "is-locked" : ""}
-                  type="button"
-                  aria-disabled={offeredWeaponNeedsPayment && !offeredWeaponAffordable}
-                  onClick={() => buyOrEquipWeapon(offeredWeapon.id)}
-                >
-                  <Coins className="h-4 w-4" />
-                  {offeredWeaponAction}
-                  <span className="weapon-shop-key">E</span>
-                </button>
+                <div className="weapon-shop-action">
+                  <div className="weapon-shop-price" aria-label={`Price ${offeredWeaponPriceLabel}`}>
+                    <span>Price</span>
+                    <strong>{offeredWeaponPriceLabel}</strong>
+                  </div>
+                  <button
+                    className={offeredWeaponNeedsPayment && !offeredWeaponAffordable ? "is-locked" : ""}
+                    type="button"
+                    aria-disabled={offeredWeaponNeedsPayment && !offeredWeaponAffordable}
+                    onClick={() => buyOrEquipWeapon(offeredWeapon.id)}
+                  >
+                    <Coins className="h-4 w-4" />
+                    {offeredWeaponAction}
+                    <span className="weapon-shop-key">R</span>
+                  </button>
+                </div>
               </div>
             ) : canUseNavigation && nearby?.canDock && !dockedService ? (
               <button
@@ -3646,7 +3656,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
                 <Target className="h-4 w-4" />
                 <span className="dock-button-text dock-button-text-full">Dock with {nearby.name}</span>
                 <span className="dock-button-text dock-button-text-short">Visit planet</span>
-                <span className="dock-button-key">E</span>
+                <span className="dock-button-key">R</span>
               </button>
             ) : dockedService ? (
               <div className="flight-status-pill pointer-events-none hidden rounded-full border border-orbit/30 bg-void/45 px-4 py-2 font-display text-xs uppercase text-parchment/70 backdrop-blur-md md:block">
