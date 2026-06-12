@@ -37,6 +37,7 @@ import {
   createPlasmaOrb,
   createPlayerBolt,
   createPlayerLaser,
+  createRuntimeWarmupGroup,
   disposeObject
 } from "../game/factories";
 import { SOUNDTRACK_URLS } from "../game/soundtrack";
@@ -123,6 +124,7 @@ type SceneBridge = {
   dockCurrent: () => void;
   releaseDock: () => void;
   toggleCameraMode: () => void;
+  warmupRuntimeAssets: () => void;
 };
 
 declare global {
@@ -188,10 +190,12 @@ const mixColor = (a: string, b: string, amount: number) => {
   return `rgb(${r}, ${g}, ${blue})`;
 };
 
-const createPlanetTexture = (service: ServicePlanet, index: number) => {
+const createPlanetTexture = (service: ServicePlanet, index: number, width = 1024) => {
+  const textureHeight = Math.round(width / 2);
+  const detailRatio = width / 1024;
   const canvas = document.createElement("canvas");
-  canvas.width = 1024;
-  canvas.height = 512;
+  canvas.width = width;
+  canvas.height = textureHeight;
   const ctx = canvas.getContext("2d")!;
   const random = randomFromSeed(1100 + index * 71);
   const [primary, secondary, shadow] = service.colors;
@@ -203,7 +207,7 @@ const createPlanetTexture = (service: ServicePlanet, index: number) => {
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  for (let i = 0; i < 28; i += 1) {
+  for (let i = 0; i < Math.round(28 * detailRatio); i += 1) {
     const y = random() * canvas.height;
     const height = 10 + random() * 42;
     const alpha = 0.08 + random() * 0.2;
@@ -211,7 +215,7 @@ const createPlanetTexture = (service: ServicePlanet, index: number) => {
     ctx.fillRect(0, y, canvas.width, height);
   }
 
-  for (let i = 0; i < 900; i += 1) {
+  for (let i = 0; i < Math.round(900 * detailRatio); i += 1) {
     const x = random() * canvas.width;
     const y = random() * canvas.height;
     const radius = random() * 2.5;
@@ -222,7 +226,7 @@ const createPlanetTexture = (service: ServicePlanet, index: number) => {
     ctx.fill();
   }
 
-  for (let i = 0; i < 24; i += 1) {
+  for (let i = 0; i < Math.round(24 * detailRatio); i += 1) {
     const x = random() * canvas.width;
     const y = random() * canvas.height;
     const radius = 5 + random() * 20;
@@ -244,10 +248,12 @@ const createPlanetTexture = (service: ServicePlanet, index: number) => {
   return texture;
 };
 
-const createSunTexture = () => {
+const createSunTexture = (width = 1024) => {
+  const textureHeight = Math.round(width / 2);
+  const detailRatio = width / 1024;
   const canvas = document.createElement("canvas");
-  canvas.width = 1024;
-  canvas.height = 512;
+  canvas.width = width;
+  canvas.height = textureHeight;
   const ctx = canvas.getContext("2d")!;
   const random = randomFromSeed(7744);
 
@@ -260,7 +266,7 @@ const createSunTexture = () => {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   ctx.globalCompositeOperation = "screen";
-  for (let i = 0; i < 120; i += 1) {
+  for (let i = 0; i < Math.round(120 * detailRatio); i += 1) {
     const x = random() * canvas.width;
     const y = random() * canvas.height;
     const radius = 30 + random() * 130;
@@ -275,7 +281,7 @@ const createSunTexture = () => {
   }
 
   ctx.globalCompositeOperation = "multiply";
-  for (let i = 0; i < 34; i += 1) {
+  for (let i = 0; i < Math.round(34 * detailRatio); i += 1) {
     const y = random() * canvas.height;
     const height = 4 + random() * 18;
     ctx.fillStyle = `rgba(103, 25, 15, ${0.04 + random() * 0.08})`;
@@ -283,7 +289,7 @@ const createSunTexture = () => {
   }
 
   ctx.globalCompositeOperation = "source-over";
-  for (let i = 0; i < 1800; i += 1) {
+  for (let i = 0; i < Math.round(1800 * detailRatio); i += 1) {
     const x = random() * canvas.width;
     const y = random() * canvas.height;
     ctx.fillStyle = random() > 0.68 ? "rgba(255,255,230,0.24)" : "rgba(92,18,10,0.14)";
@@ -865,6 +871,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
   }, [buyOrEquipWeapon]);
 
   const startBattleAudio = useCallback(() => {
+    bridgeRef.current?.warmupRuntimeAssets();
     audioRef.current.preload();
     audioRef.current.primeSoundtrack(SOUNDTRACK_URLS);
     audioRef.current.resume();
@@ -972,6 +979,9 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     }
 
     let frameId = 0;
+    let runtimeWarmupDone = false;
+    let runtimeWarmupIdleId: number | null = null;
+    let runtimeWarmupTimeoutId: number | null = null;
     let lastTelemetry = 0;
     let lastCombatHud = 0;
     let lastPixelSample = 0;
@@ -1030,6 +1040,8 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       id: "",
       radius: 0
     };
+    const mobilePerformanceMode = window.matchMedia("(max-width: 920px), (hover: none) and (pointer: coarse)").matches;
+    const surfaceTextureWidth = mobilePerformanceMode ? 768 : 1024;
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x060411);
@@ -1043,7 +1055,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       powerPreference: "high-performance",
       preserveDrawingBuffer: true
     });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, mobilePerformanceMode ? 1.5 : 2));
     renderer.setSize(mount.clientWidth, mount.clientHeight);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -1118,7 +1130,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     scene.add(dust);
 
     const sunGroup = new THREE.Group();
-    const sunTexture = createSunTexture();
+    const sunTexture = createSunTexture(surfaceTextureWidth);
     const sun = new THREE.Mesh(
       new THREE.SphereGeometry(6.2, 72, 36),
       new THREE.MeshBasicMaterial({ map: sunTexture, color: 0xffcf65 })
@@ -1150,7 +1162,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       group.position.x = service.orbitRadius;
       orbit.add(group);
 
-      const texture = createPlanetTexture(service, index);
+      const texture = createPlanetTexture(service, index, surfaceTextureWidth);
       const body = new THREE.Mesh(
         new THREE.SphereGeometry(service.size, 64, 32),
         new THREE.MeshStandardMaterial({
@@ -1292,6 +1304,36 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
         flameLight.intensity = visible ? power * (boosting ? 5.2 : 3.8) : 0;
         flameLight.distance = 10 + power * 16;
       }
+    };
+
+    const runRuntimeWarmup = () => {
+      if (runtimeWarmupDone) {
+        return;
+      }
+      runtimeWarmupDone = true;
+      const warmupGroup = createRuntimeWarmupGroup();
+
+      try {
+        scene.add(warmupGroup);
+        renderer.compile(scene, camera);
+      } finally {
+        scene.remove(warmupGroup);
+        disposeObject(warmupGroup);
+      }
+    };
+
+    const scheduleRuntimeWarmup = () => {
+      const idleWindow = window as Window & {
+        cancelIdleCallback?: (handle: number) => void;
+        requestIdleCallback?: (callback: IdleRequestCallback, options?: IdleRequestOptions) => number;
+      };
+
+      if (idleWindow.requestIdleCallback) {
+        runtimeWarmupIdleId = idleWindow.requestIdleCallback(runRuntimeWarmup, { timeout: 1200 });
+        return;
+      }
+
+      runtimeWarmupTimeoutId = window.setTimeout(runRuntimeWarmup, 450);
     };
 
     const setMode = (mode: FlightMode) => {
@@ -2027,7 +2069,8 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
         autopilotTarget.active = false;
         setMode("Manual");
       },
-      toggleCameraMode: () => togglePointerLock()
+      toggleCameraMode: () => togglePointerLock(),
+      warmupRuntimeAssets: runRuntimeWarmup
     };
 
     const onKeyDown = (event: KeyboardEvent) => {
@@ -2819,9 +2862,17 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     };
 
     animate();
+    scheduleRuntimeWarmup();
 
     return () => {
       window.cancelAnimationFrame(frameId);
+      if (runtimeWarmupIdleId !== null) {
+        const idleWindow = window as Window & { cancelIdleCallback?: (handle: number) => void };
+        idleWindow.cancelIdleCallback?.(runtimeWarmupIdleId);
+      }
+      if (runtimeWarmupTimeoutId !== null) {
+        window.clearTimeout(runtimeWarmupTimeoutId);
+      }
       clearTouchHoldFire();
       resizeObserver.disconnect();
       window.removeEventListener("keydown", onKeyDown);
@@ -2845,17 +2896,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       labelRenderer.domElement.remove();
       renderer.domElement.remove();
       renderer.dispose();
-      scene.traverse((object) => {
-        if (object instanceof THREE.Mesh || object instanceof THREE.Points || object instanceof THREE.Line) {
-          object.geometry?.dispose();
-          const material = object.material;
-          if (Array.isArray(material)) {
-            material.forEach((entry) => entry.dispose());
-          } else {
-            material?.dispose();
-          }
-        }
-      });
+      disposeObject(scene);
     };
   }, [initialMatchPhase, matchId, services]);
 

@@ -4,10 +4,12 @@ import { mixColor, randomFromSeed } from "./math";
 
 const radialTextureCache = new Map<string, THREE.CanvasTexture>();
 
-export const createPlanetTexture = (service: ServicePlanet, index: number) => {
+export const createPlanetTexture = (service: ServicePlanet, index: number, width = 1024) => {
+  const height = Math.round(width / 2);
+  const detailRatio = width / 1024;
   const canvas = document.createElement("canvas");
-  canvas.width = 1024;
-  canvas.height = 512;
+  canvas.width = width;
+  canvas.height = height;
   const ctx = canvas.getContext("2d")!;
   const random = randomFromSeed(1100 + index * 71);
   const [primary, secondary, shadow] = service.colors;
@@ -19,7 +21,7 @@ export const createPlanetTexture = (service: ServicePlanet, index: number) => {
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  for (let i = 0; i < 28; i += 1) {
+  for (let i = 0; i < Math.round(28 * detailRatio); i += 1) {
     const y = random() * canvas.height;
     const height = 10 + random() * 42;
     const alpha = 0.08 + random() * 0.2;
@@ -27,7 +29,7 @@ export const createPlanetTexture = (service: ServicePlanet, index: number) => {
     ctx.fillRect(0, y, canvas.width, height);
   }
 
-  for (let i = 0; i < 900; i += 1) {
+  for (let i = 0; i < Math.round(900 * detailRatio); i += 1) {
     const x = random() * canvas.width;
     const y = random() * canvas.height;
     const radius = random() * 2.5;
@@ -38,7 +40,7 @@ export const createPlanetTexture = (service: ServicePlanet, index: number) => {
     ctx.fill();
   }
 
-  for (let i = 0; i < 24; i += 1) {
+  for (let i = 0; i < Math.round(24 * detailRatio); i += 1) {
     const x = random() * canvas.width;
     const y = random() * canvas.height;
     const radius = 5 + random() * 20;
@@ -60,10 +62,12 @@ export const createPlanetTexture = (service: ServicePlanet, index: number) => {
   return texture;
 };
 
-export const createSunTexture = () => {
+export const createSunTexture = (width = 1024) => {
+  const height = Math.round(width / 2);
+  const detailRatio = width / 1024;
   const canvas = document.createElement("canvas");
-  canvas.width = 1024;
-  canvas.height = 512;
+  canvas.width = width;
+  canvas.height = height;
   const ctx = canvas.getContext("2d")!;
   const random = randomFromSeed(7744);
 
@@ -76,7 +80,7 @@ export const createSunTexture = () => {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   ctx.globalCompositeOperation = "screen";
-  for (let i = 0; i < 120; i += 1) {
+  for (let i = 0; i < Math.round(120 * detailRatio); i += 1) {
     const x = random() * canvas.width;
     const y = random() * canvas.height;
     const radius = 30 + random() * 130;
@@ -91,7 +95,7 @@ export const createSunTexture = () => {
   }
 
   ctx.globalCompositeOperation = "multiply";
-  for (let i = 0; i < 34; i += 1) {
+  for (let i = 0; i < Math.round(34 * detailRatio); i += 1) {
     const y = random() * canvas.height;
     const height = 4 + random() * 18;
     ctx.fillStyle = `rgba(103, 25, 15, ${0.04 + random() * 0.08})`;
@@ -99,7 +103,7 @@ export const createSunTexture = () => {
   }
 
   ctx.globalCompositeOperation = "source-over";
-  for (let i = 0; i < 1800; i += 1) {
+  for (let i = 0; i < Math.round(1800 * detailRatio); i += 1) {
     const x = random() * canvas.width;
     const y = random() * canvas.height;
     ctx.fillStyle = random() > 0.68 ? "rgba(255,255,230,0.24)" : "rgba(92,18,10,0.14)";

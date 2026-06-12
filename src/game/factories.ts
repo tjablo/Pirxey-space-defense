@@ -14,8 +14,16 @@ const markShared = <T extends THREE.BufferGeometry | THREE.Material | THREE.Text
   return resource;
 };
 
-const isShared = (resource: THREE.BufferGeometry | THREE.Material | null | undefined) =>
+const isShared = (resource: THREE.BufferGeometry | THREE.Material | THREE.Texture | null | undefined) =>
   Boolean(resource?.userData[SHARED_RESOURCE]);
+
+const disposeMaterialTextures = (material: THREE.Material) => {
+  for (const value of Object.values(material as unknown as Record<string, unknown>)) {
+    if (value instanceof THREE.Texture && !isShared(value)) {
+      value.dispose();
+    }
+  }
+};
 
 type PlayerBoltAssets = {
   beamGeometry: THREE.CapsuleGeometry;
@@ -434,6 +442,75 @@ export const attachShipCannons = (ship: THREE.Group) => {
   }
 };
 
+export const createRuntimeWarmupGroup = () => {
+  const group = new THREE.Group();
+  group.name = "runtime-asset-warmup";
+
+  const playerBolt = getPlayerBoltAssets();
+  group.add(
+    new THREE.Mesh(playerBolt.beamGeometry, playerBolt.beamMaterial),
+    new THREE.Mesh(playerBolt.coreGeometry, playerBolt.coreMaterial),
+    new THREE.Mesh(playerBolt.tailGeometry, playerBolt.tailMaterial)
+  );
+
+  const laser = getLaserAssets();
+  group.add(new THREE.Mesh(laser.beamGeometry, laser.beamMaterial), new THREE.Mesh(laser.coreGeometry, laser.coreMaterial));
+
+  const missile = getMissileAssets();
+  const missileBody = new THREE.Mesh(missile.bodyGeometry, missile.bodyMaterial);
+  const missileNose = new THREE.Mesh(missile.noseGeometry, missile.noseMaterial);
+  const missileFlare = new THREE.Sprite(missile.flareMaterial);
+  group.add(missileBody, missileNose, missileFlare);
+
+  const plasma = getPlasmaAssets();
+  group.add(
+    new THREE.Mesh(plasma.coreGeometry, plasma.coreMaterial),
+    new THREE.Mesh(plasma.shellGeometry, plasma.shellMaterial),
+    new THREE.Mesh(plasma.ringGeometry, plasma.ringMaterial),
+    new THREE.Mesh(plasma.ringGeometry, plasma.ringMaterial),
+    new THREE.Sprite(plasma.haloMaterial)
+  );
+
+  const enemyShot = getEnemyShotAssets();
+  group.add(
+    new THREE.Mesh(enemyShot.beamGeometry, enemyShot.beamMaterial),
+    new THREE.Mesh(enemyShot.coreGeometry, enemyShot.coreMaterial),
+    new THREE.Mesh(enemyShot.tailGeometry, enemyShot.tailMaterial)
+  );
+
+  const bug = getEnemyBugAssets();
+  group.add(
+    new THREE.Mesh(bug.bodyGeometry, bug.bodyMaterial),
+    new THREE.Mesh(bug.shellGeometry, bug.shellMaterial),
+    new THREE.Mesh(bug.eyeGeometry, bug.eyeMaterial),
+    new THREE.Mesh(bug.legGeometry, bug.bodyMaterial),
+    new THREE.Sprite(bug.threatGlowMaterial)
+  );
+
+  const boss = getDeathStarAssets();
+  group.add(
+    new THREE.Mesh(boss.bodyGeometry, boss.bodyMaterial),
+    new THREE.Mesh(boss.cannonGeometry, boss.cannonMaterial),
+    new THREE.Mesh(boss.eyeGeometry, boss.eyeMaterial),
+    new THREE.Mesh(boss.eyeSocketGeometry, boss.eyeSocketMaterial),
+    new THREE.Mesh(boss.ringGeometry, boss.ringMaterial),
+    new THREE.Mesh(boss.ringGeometry, boss.ringMaterial),
+    new THREE.Sprite(boss.glowMaterial)
+  );
+
+  const explosion = createExplosion(new THREE.Vector3(), 0x7dffea, 8, 1);
+  explosion.group.children
+    .filter((child) => child instanceof THREE.PointLight)
+    .forEach((light) => {
+      explosion.group.remove(light);
+    });
+  group.add(explosion.group);
+  group.position.set(0, 0, -120);
+  group.scale.setScalar(0.001);
+
+  return group;
+};
+
 export const createPlayerBolt = (position: THREE.Vector3, direction: THREE.Vector3): ProjectileRuntime => {
   const group = new THREE.Group();
   const normalizedDirection = direction.clone().normalize();
@@ -544,7 +621,7 @@ export const createPlasmaOrb = (position: THREE.Vector3, direction: THREE.Vector
   const shell = new THREE.Mesh(assets.shellGeometry, assets.shellMaterial);
   const halo = new THREE.Sprite(assets.haloMaterial);
   const ringA = new THREE.Mesh(assets.ringGeometry, assets.ringMaterial);
-  const ringB = new THREE.Mesh(assets.ringGeometry, assets.ringMaterial.clone());
+  const ringB = new THREE.Mesh(assets.ringGeometry, assets.ringMaterial);
   const light = new THREE.PointLight(0x7dffea, 3.4, 12);
   ringA.rotation.x = Math.PI / 2;
   ringB.rotation.y = Math.PI / 2.35;
@@ -677,7 +754,7 @@ export const createDeathStarBoss = (
   group.add(body);
 
   const ringA = new THREE.Mesh(assets.ringGeometry, assets.ringMaterial);
-  const ringB = new THREE.Mesh(assets.ringGeometry, assets.ringMaterial.clone());
+  const ringB = new THREE.Mesh(assets.ringGeometry, assets.ringMaterial);
   ringA.rotation.x = Math.PI / 2;
   ringB.rotation.y = Math.PI / 2.15;
   group.add(ringA, ringB);
@@ -834,11 +911,13 @@ export const disposeObject = (object: THREE.Object3D) => {
         material.forEach((item) => {
           if (!isShared(item) && !disposedMaterials.has(item)) {
             disposedMaterials.add(item);
+            disposeMaterialTextures(item);
             item.dispose();
           }
         });
       } else if (material && !isShared(material) && !disposedMaterials.has(material)) {
         disposedMaterials.add(material);
+        disposeMaterialTextures(material);
         material?.dispose();
       }
     }
