@@ -8,6 +8,7 @@ export type GameAudio = {
   isMuted: () => boolean;
   missile: () => void;
   planetExplosion: () => void;
+  planetRevival: () => void;
   plasma: () => void;
   preload: () => void;
   primeSoundtrack: (tracks: string[]) => void;
@@ -332,6 +333,12 @@ export const createGameAudio = (): GameAudio => {
     planetExplosion: () => {
       tone(96, 0.55, "sawtooth", 0.12, -58);
       tone(42, 0.7, "sine", 0.09, -12);
+    },
+    planetRevival: () => {
+      tone(176, 0.62, "sine", 0.052, 420);
+      tone(352, 0.5, "triangle", 0.04, 720);
+      tone(704, 0.34, "sine", 0.028, 620);
+      tone(1280, 0.18, "triangle", 0.018, 520);
     },
     plasma: () => {
       playFusionFlash();

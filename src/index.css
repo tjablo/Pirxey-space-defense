@@ -1088,6 +1088,52 @@ canvas.is-pointer-locked {
   backdrop-filter: blur(18px);
 }
 
+.solar-revival-bubble {
+  border-color: rgba(168, 230, 240, 0.44);
+  background:
+    linear-gradient(135deg, rgba(90, 166, 189, 0.18), rgba(255, 207, 101, 0.12)),
+    rgba(6, 4, 17, 0.78);
+  box-shadow:
+    0 24px 80px rgba(0, 0, 0, 0.4),
+    0 0 38px rgba(168, 230, 240, 0.16),
+    0 0 26px rgba(255, 207, 101, 0.12);
+  animation: solarRevivalOffer 1700ms ease-in-out infinite;
+}
+
+.solar-revival-bubble .weapon-shop-copy strong,
+.solar-revival-bubble .weapon-shop-price,
+.solar-revival-bubble .weapon-shop-price strong,
+.weapon-shop-bubble.solar-revival-bubble button {
+  color: #a8e6f0;
+}
+
+.solar-revival-bubble .weapon-shop-price,
+.weapon-shop-bubble.solar-revival-bubble button {
+  border-color: rgba(168, 230, 240, 0.46);
+  background: rgba(90, 166, 189, 0.16);
+}
+
+.weapon-shop-bubble.solar-revival-bubble button:hover:not(:disabled):not(.is-locked) {
+  background: rgba(90, 166, 189, 0.24);
+}
+
+.solar-revival-bubble.is-disabled {
+  border-color: rgba(249, 249, 234, 0.16);
+  background:
+    linear-gradient(135deg, rgba(249, 249, 234, 0.055), rgba(90, 166, 189, 0.06)),
+    rgba(6, 4, 17, 0.74);
+  box-shadow:
+    0 18px 56px rgba(0, 0, 0, 0.34),
+    0 0 18px rgba(249, 249, 234, 0.06);
+  animation: none;
+}
+
+.solar-revival-bubble.is-disabled .weapon-shop-copy strong,
+.solar-revival-bubble.is-disabled .weapon-shop-price,
+.solar-revival-bubble.is-disabled .weapon-shop-price strong {
+  color: rgba(249, 249, 234, 0.58);
+}
+
 .weapon-shop-copy {
   min-width: 0;
 }
@@ -1342,6 +1388,24 @@ canvas.is-pointer-locked {
     box-shadow:
       0 0 0 9px rgba(90, 166, 189, 0),
       0 18px 52px rgba(255, 207, 101, 0.3);
+  }
+}
+
+@keyframes solarRevivalOffer {
+  0%,
+  100% {
+    transform: translateY(0);
+    box-shadow:
+      0 24px 80px rgba(0, 0, 0, 0.4),
+      0 0 30px rgba(168, 230, 240, 0.14),
+      0 0 20px rgba(255, 207, 101, 0.1);
+  }
+  50% {
+    transform: translateY(-2px);
+    box-shadow:
+      0 28px 88px rgba(0, 0, 0, 0.44),
+      0 0 46px rgba(168, 230, 240, 0.24),
+      0 0 30px rgba(255, 207, 101, 0.18);
   }
 }
 

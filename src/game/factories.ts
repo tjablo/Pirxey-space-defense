@@ -110,6 +110,8 @@ let plasmaAssets: PlasmaAssets | null = null;
 let enemyBugAssets: EnemyBugAssets | null = null;
 let deathStarAssets: DeathStarAssets | null = null;
 
+const ENEMY_SHOT_LIFETIME = 7.5;
+
 const explosionTexture = markShared(createRadialTexture("rgba(255,207,101,1)", "rgba(215,71,33,0)", 0.8));
 const explosionRingGeometry = markShared(new THREE.RingGeometry(0.55, 1.0, 48));
 const explosionCoreGeometry = markShared(new THREE.SphereGeometry(0.36, 16, 10));
@@ -664,7 +666,7 @@ export const createHomingMissile = (
   return {
     id: projectileId++,
     blastRadius: 2.15,
-    damage: 12,
+    damage: 10,
     homing: true,
     impactColor: 0xffcf65,
     life: 4.5,
@@ -730,7 +732,7 @@ export const createEnemyShot = (
     id: projectileId++,
     canDamagePlanets: options.canDamagePlanets ?? true,
     damage: options.damage ?? 1,
-    life: 4.2,
+    life: ENEMY_SHOT_LIFETIME,
     mesh: group,
     owner: "enemy",
     radius: options.radius ?? 0.4,

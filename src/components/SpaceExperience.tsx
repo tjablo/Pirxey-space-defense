@@ -14,6 +14,7 @@ import {
   Radio,
   RotateCcw,
   Rocket,
+  Sparkles,
   Telescope,
   Target,
   Volume2,
@@ -118,6 +119,25 @@ type PlanetRuntime = {
   health: number;
   destroyed: boolean;
   maxHealth: number;
+};
+
+type NearbySolarRevival = {
+  available: boolean;
+  chargeCount: number;
+  distance: number;
+  lockedReason: string;
+  lostCount: number;
+  nextWave: number;
+  wave: number;
+};
+
+type PlanetRevivalAnimation = {
+  glow: THREE.Sprite;
+  life: number;
+  light: THREE.PointLight;
+  maxLife: number;
+  planet: PlanetRuntime;
+  ring: THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>;
 };
 
 type WaveSpawnJob =
@@ -582,7 +602,40 @@ const getPlanetCode = (planet: PlanetHudItem) =>
     .join("");
 
 const PLAYER_MAX_HEALTH = 100;
+const SUN_RADIUS = 6.2;
 const WEAPON_SHOP_DISTANCE = 7.4;
+const SOLAR_REVIVAL_COST = 3400;
+const SOLAR_REVIVAL_START_WAVE = 10;
+const SOLAR_REVIVAL_INTERVAL = 5;
+const SOLAR_REVIVAL_SHOP_DISTANCE = 5.0;
+const SOLAR_REVIVAL_ANIMATION_DURATION = 1.65;
+
+const getSolarRevivalDisplayWave = (phase: CombatHud["phase"], currentWave: number) =>
+  phase === "Countdown" ? currentWave + 1 : phase === "Running" ? currentWave : 0;
+
+const getNextSolarRevivalWave = (wave: number) =>
+  wave < SOLAR_REVIVAL_START_WAVE
+    ? SOLAR_REVIVAL_START_WAVE
+    : SOLAR_REVIVAL_START_WAVE +
+      (Math.floor((wave - SOLAR_REVIVAL_START_WAVE) / SOLAR_REVIVAL_INTERVAL) + 1) * SOLAR_REVIVAL_INTERVAL;
+
+const getUnlockedSolarRevivalCharges = (wave: number) =>
+  wave < SOLAR_REVIVAL_START_WAVE
+    ? 0
+    : Math.floor((wave - SOLAR_REVIVAL_START_WAVE) / SOLAR_REVIVAL_INTERVAL) + 1;
+
+const getPlanetRaidDamageMultiplier = (activePlanetCount: number) => {
+  if (activePlanetCount <= 1) {
+    return 0.24;
+  }
+  if (activePlanetCount === 2) {
+    return 0.42;
+  }
+  if (activePlanetCount === 3) {
+    return 0.72;
+  }
+  return 1;
+};
 
 const getWeaponAmmo = (weaponId: WeaponId | null, ammo: WeaponAmmoState) => {
   if (!weaponId) {
@@ -626,6 +679,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     mode: "Manual"
   });
   const [nearby, setNearby] = useState<NearbyService | null>(null);
+  const [nearbySolarRevival, setNearbySolarRevival] = useState<NearbySolarRevival | null>(null);
   const [dockedService, setDockedService] = useState<ServicePlanet | null>(null);
   const [cameraMode, setCameraMode] = useState<CameraMode>("Drag aim");
   const [showControls, setShowControls] = useState(false);
@@ -644,6 +698,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
   const [weaponAmmo, setWeaponAmmo] = useState<WeaponAmmoState>({});
   const weaponAmmoRef = useRef<WeaponAmmoState>({});
   const buyOrEquipWeaponRef = useRef<(weaponId: WeaponId) => void>(() => undefined);
+  const reviveRandomPlanetRef = useRef<() => boolean>(() => false);
   const [shipHealth, setShipHealth] = useState(PLAYER_MAX_HEALTH);
   const [planetHud, setPlanetHud] = useState<PlanetHudItem[]>(() =>
     services.map((service) => ({
@@ -677,6 +732,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     );
     setDockedService(null);
     setNearby(null);
+    setNearbySolarRevival(null);
     setCameraMode("Drag aim");
     setShowDestinations(false);
     touchInputRef.current = createTouchFlightInput();
@@ -1036,6 +1092,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     let lastTelemetry = 0;
     let lastCombatHud = 0;
     let lastNearbyKey = "";
+    let lastSolarRevivalKey = "";
     let fireCooldown = 0;
     let starSpiralPhase = 0;
     let secondaryFireCooldown = 0;
@@ -1060,6 +1117,8 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     const stagedEnemies: StagedEnemy[] = [];
     const projectiles: ProjectileRuntime[] = [];
     const explosions: ExplosionRuntime[] = [];
+    const planetRevivalAnimations: PlanetRevivalAnimation[] = [];
+    let usedSolarRevivalCount = 0;
     const clock = new THREE.Clock();
     const velocity = new THREE.Vector3();
     const forward = new THREE.Vector3();
@@ -1194,7 +1253,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     const sunGroup = new THREE.Group();
     const sunTexture = createSunTexture(surfaceTextureWidth);
     const sun = new THREE.Mesh(
-      new THREE.SphereGeometry(6.2, 72, 36),
+      new THREE.SphereGeometry(SUN_RADIUS, 72, 36),
       new THREE.MeshBasicMaterial({ map: sunTexture, color: 0xffcf65 })
     );
     sunGroup.add(sun);
@@ -1209,6 +1268,31 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
     );
     corona.scale.set(27, 27, 1);
     sunGroup.add(corona);
+    const solarRevivalBeacon = new THREE.Sprite(
+      new THREE.SpriteMaterial({
+        map: createRadialTexture("rgba(168,230,240,1)", "rgba(255,207,101,0)", 0.88),
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending
+      })
+    );
+    solarRevivalBeacon.visible = false;
+    solarRevivalBeacon.scale.set(18, 18, 1);
+    sunGroup.add(solarRevivalBeacon);
+    const solarRevivalRing = new THREE.Mesh(
+      new THREE.TorusGeometry(SUN_RADIUS + 1.05, 0.055, 12, 112),
+      new THREE.MeshBasicMaterial({
+        color: 0xa8e6f0,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending
+      })
+    );
+    solarRevivalRing.visible = false;
+    solarRevivalRing.rotation.x = Math.PI / 2.4;
+    sunGroup.add(solarRevivalRing);
     const sunLight = new THREE.PointLight(0xffcf65, 5, 220, 1.45);
     sunGroup.add(sunLight);
     scene.add(sunGroup);
@@ -1438,6 +1522,146 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       scene.add(explosion.group);
     };
 
+    const getDestroyedPlanets = () => planetRuntimes.filter((planet) => planet.destroyed);
+
+    const getCurrentSolarRevivalWave = () => getSolarRevivalDisplayWave(gamePhaseRef.current, currentWave);
+
+    const findNearbySolarRevival = (): NearbySolarRevival | null => {
+      const offerWave = getCurrentSolarRevivalWave();
+      if (offerWave <= 0 || dockedTarget.active) {
+        return null;
+      }
+
+      const lostCount = getDestroyedPlanets().length;
+      ship.getWorldPosition(shipWorld);
+      const distance = shipWorld.length() - SUN_RADIUS;
+      if (distance > SOLAR_REVIVAL_SHOP_DISTANCE) {
+        return null;
+      }
+
+      const unlockedCount = getUnlockedSolarRevivalCharges(offerWave);
+      const chargeCount = Math.max(0, unlockedCount - usedSolarRevivalCount);
+      const nextWave = getNextSolarRevivalWave(offerWave);
+      const available = chargeCount > 0 && lostCount > 0 && creditsRef.current >= SOLAR_REVIVAL_COST;
+      const lockedReason =
+        offerWave < SOLAR_REVIVAL_START_WAVE
+          ? `Unlocks at wave ${SOLAR_REVIVAL_START_WAVE}`
+          : chargeCount <= 0
+            ? `Next charge at wave ${nextWave}`
+            : lostCount === 0
+              ? "No lost planets"
+              : creditsRef.current < SOLAR_REVIVAL_COST
+                ? `${SOLAR_REVIVAL_COST - creditsRef.current} cr needed`
+                : "Ready";
+
+      return {
+        available,
+        chargeCount,
+        distance,
+        lockedReason,
+        lostCount,
+        nextWave,
+        wave: offerWave
+      };
+    };
+
+    const finishPlanetRevivalAnimation = (animation: PlanetRevivalAnimation) => {
+      animation.planet.group.scale.setScalar(1);
+      animation.planet.group.remove(animation.glow, animation.ring, animation.light);
+      disposeObject(animation.glow);
+      disposeObject(animation.ring);
+    };
+
+    const startPlanetRevivalAnimation = (planet: PlanetRuntime) => {
+      for (let index = planetRevivalAnimations.length - 1; index >= 0; index -= 1) {
+        const animation = planetRevivalAnimations[index];
+        if (animation.planet === planet) {
+          finishPlanetRevivalAnimation(animation);
+          planetRevivalAnimations.splice(index, 1);
+        }
+      }
+
+      planet.group.visible = true;
+      planet.group.scale.setScalar(0.04);
+
+      const glow = new THREE.Sprite(
+        new THREE.SpriteMaterial({
+          map: createRadialTexture("rgba(255,249,234,1)", "rgba(90,166,189,0)", 0.9),
+          color: 0xffcf65,
+          transparent: true,
+          opacity: 0.95,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending
+        })
+      );
+      glow.scale.setScalar(planet.service.size * 5.2);
+      planet.group.add(glow);
+
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(planet.service.size * 1.25, planet.service.size * 1.75, 96),
+        new THREE.MeshBasicMaterial({
+          color: 0xa8e6f0,
+          transparent: true,
+          opacity: 0.72,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending
+        })
+      );
+      ring.rotation.x = Math.PI / 2;
+      ring.scale.setScalar(0.1);
+      planet.group.add(ring);
+
+      const light = new THREE.PointLight(0xffcf65, 7.2, 18, 1.7);
+      planet.group.add(light);
+
+      planetRevivalAnimations.push({
+        glow,
+        life: SOLAR_REVIVAL_ANIMATION_DURATION,
+        light,
+        maxLife: SOLAR_REVIVAL_ANIMATION_DURATION,
+        planet,
+        ring
+      });
+    };
+
+    const reviveRandomPlanet = () => {
+      const offer = findNearbySolarRevival();
+      if (!offer || !offer.available) {
+        return false;
+      }
+
+      const lostPlanets = getDestroyedPlanets();
+      if (lostPlanets.length === 0) {
+        return false;
+      }
+
+      const planet = lostPlanets[Math.floor(Math.random() * lostPlanets.length)];
+      if (!planet) {
+        return false;
+      }
+
+      creditsRef.current -= SOLAR_REVIVAL_COST;
+      setCredits(creditsRef.current);
+      usedSolarRevivalCount += 1;
+
+      planet.destroyed = false;
+      planet.health = planet.maxHealth;
+      planet.ring.material.opacity = 0;
+      planet.group.visible = true;
+      setDestroyedPlanetIds((previous) => previous.filter((id) => id !== planet.service.id));
+
+      addExplosion(new THREE.Vector3(0, 0, 0), 0xffcf65, 42, 2.25);
+      planet.group.getWorldPosition(explosionPosition);
+      addExplosion(explosionPosition, 0xa8e6f0, 58, planet.service.size * 1.25);
+      startPlanetRevivalAnimation(planet);
+      audioRef.current.planetRevival();
+      syncPlanetHud();
+      setNearbySolarRevival(null);
+      lastSolarRevivalKey = "none";
+      return true;
+    };
+
     const syncShipHealth = () => {
       setShipHealth(Math.round(runtimeShipHealth));
     };
@@ -1507,6 +1731,14 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       }
       planet.destroyed = true;
       planet.health = 0;
+      planet.group.scale.setScalar(1);
+      for (let index = planetRevivalAnimations.length - 1; index >= 0; index -= 1) {
+        const animation = planetRevivalAnimations[index];
+        if (animation.planet === planet) {
+          finishPlanetRevivalAnimation(animation);
+          planetRevivalAnimations.splice(index, 1);
+        }
+      }
       planet.ring.material.opacity = 0;
       planet.group.getWorldPosition(explosionPosition);
       addExplosion(explosionPosition, 0xffcf65, 42, planet.service.size * 1.05);
@@ -1736,7 +1968,8 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       origin: THREE.Vector3,
       direction: THREE.Vector3,
       maxDistance = 150,
-      minAlignment = 0.16
+      minAlignment = 0.16,
+      excludedEnemyIds: ReadonlySet<number> = new Set()
     ) => {
       let target: EnemyRuntime | null = null;
       let nearestDistanceSq = maxDistance * maxDistance;
@@ -1744,6 +1977,9 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       missileForward.copy(direction).normalize();
 
       for (const enemy of enemies) {
+        if (excludedEnemyIds.has(enemy.id)) {
+          continue;
+        }
         missileTargetOffset.copy(enemy.group.position).sub(origin);
         const distanceSq = missileTargetOffset.lengthSq();
         if (distanceSq <= 0.000001 || distanceSq > maxDistanceSq) {
@@ -1882,10 +2118,19 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       projectilePosition.copy(ship.position).add(muzzleOffset);
 
       if (weaponId === "homing-missiles") {
-        const target = findEnemyInDirection(projectilePosition, forward, 170, 0.12);
-        const missile = createHomingMissile(projectilePosition, forward, target?.id ?? null);
-        projectiles.push(missile);
-        scene.add(missile.mesh);
+        const targetedEnemyIds = new Set<number>();
+        for (const side of [-1, 1]) {
+          muzzleOffset.set(side * 0.5, -0.02, -2.32).applyQuaternion(ship.quaternion);
+          projectilePosition.copy(ship.position).add(muzzleOffset);
+          projectileDirection.copy(forward).addScaledVector(shipRight.set(1, 0, 0).applyQuaternion(ship.quaternion), side * 0.045).normalize();
+          const target = findEnemyInDirection(projectilePosition, projectileDirection, 170, 0.08, targetedEnemyIds);
+          if (target) {
+            targetedEnemyIds.add(target.id);
+          }
+          const missile = createHomingMissile(projectilePosition, projectileDirection, target?.id ?? null);
+          projectiles.push(missile);
+          scene.add(missile.mesh);
+        }
       } else if (weaponId === "plasma-orb") {
         const orb = createPlasmaOrb(projectilePosition, forward);
         projectiles.push(orb);
@@ -1988,7 +2233,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
 
       enemyPlanetOffset.copy(enemy.group.position);
       let sunDistance = enemyPlanetOffset.length();
-      const sunBodyClearance = 6.2 + enemy.hitRadius + 0.95;
+      const sunBodyClearance = SUN_RADIUS + enemy.hitRadius + 0.95;
       const sunSteeringRadius = sunBodyClearance + 5.4 + enemy.hitRadius * 0.6;
 
       if (sunDistance < 0.001) {
@@ -2244,6 +2489,10 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       return true;
     };
 
+    const useNearbySolarRevival = () => reviveRandomPlanet();
+
+    reviveRandomPlanetRef.current = reviveRandomPlanet;
+
     bridgeRef.current = {
       flyTo: (id: string) => {
         if (isNavigationLocked()) {
@@ -2273,7 +2522,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       }
       keys.add(event.code);
       if (event.code === "KeyR" && !event.ctrlKey && !event.metaKey && !event.altKey) {
-        if (useNearbyArmory()) {
+        if (useNearbySolarRevival() || useNearbyArmory()) {
           event.preventDefault();
         } else {
           event.preventDefault();
@@ -2505,6 +2754,24 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
 
       sun.rotation.y += delta * 0.045;
       corona.material.rotation = elapsed * 0.03;
+      const activeSolarRevivalWave = getCurrentSolarRevivalWave();
+      const solarRevivalVisible = activeSolarRevivalWave > 0;
+      const solarRevivalReady =
+        getUnlockedSolarRevivalCharges(activeSolarRevivalWave) - usedSolarRevivalCount > 0 &&
+        getDestroyedPlanets().length > 0;
+      solarRevivalBeacon.visible = solarRevivalVisible;
+      solarRevivalRing.visible = solarRevivalVisible;
+      if (solarRevivalVisible) {
+        const pulse = 0.5 + Math.sin(elapsed * 3.2) * 0.5;
+        solarRevivalBeacon.material.opacity = solarRevivalReady ? 0.18 + pulse * 0.28 : 0.08 + pulse * 0.08;
+        solarRevivalBeacon.scale.setScalar(solarRevivalReady ? 18 + pulse * 3.5 : 13 + pulse * 1.4);
+        solarRevivalRing.material.opacity = solarRevivalReady ? 0.28 + pulse * 0.32 : 0.1 + pulse * 0.1;
+        solarRevivalRing.rotation.z += delta * (solarRevivalReady ? 0.58 : 0.22);
+        solarRevivalRing.scale.setScalar(1 + pulse * 0.035);
+      } else {
+        solarRevivalBeacon.material.opacity = 0;
+        solarRevivalRing.material.opacity = 0;
+      }
       starFieldA.rotation.y += delta * 0.0025;
       starFieldB.rotation.y -= delta * 0.003;
       dust.rotation.y += delta * 0.004;
@@ -2534,6 +2801,8 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
         planetRuntimes.find((planet) => planet.service.id === selectedIdRef.current && !planet.destroyed) ??
         activePlanets()[0] ??
         planetRuntimes[0];
+      const activePlanetCountForFrame = activePlanets().length;
+      const planetRaidDamageMultiplier = getPlanetRaidDamageMultiplier(activePlanetCountForFrame);
       selectedRuntime.group.getWorldPosition(targetWorld);
       const distanceToSelected = shipWorld.distanceTo(targetWorld) - selectedRuntime.service.size;
 
@@ -2581,6 +2850,32 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
           scene.remove(explosion.group);
           disposeObject(explosion.group);
           explosions.splice(i, 1);
+        }
+      }
+
+      for (let i = planetRevivalAnimations.length - 1; i >= 0; i -= 1) {
+        const animation = planetRevivalAnimations[i];
+        if (animation.planet.destroyed) {
+          finishPlanetRevivalAnimation(animation);
+          planetRevivalAnimations.splice(i, 1);
+          continue;
+        }
+
+        animation.life -= delta;
+        const progress = clamp(1 - animation.life / animation.maxLife, 0, 1);
+        const eased = 1 - Math.pow(1 - progress, 3);
+        const fade = clamp(animation.life / animation.maxLife, 0, 1);
+        animation.planet.group.scale.setScalar(0.04 + eased * 0.96);
+        animation.glow.material.opacity = fade * 0.95;
+        animation.glow.scale.setScalar(animation.planet.service.size * (5.2 + progress * 2.8));
+        animation.ring.material.opacity = Math.sin(progress * Math.PI) * 0.78;
+        animation.ring.scale.setScalar(0.1 + eased * 2.2);
+        animation.ring.rotation.z += delta * 3.2;
+        animation.light.intensity = fade * 7.2;
+
+        if (animation.life <= 0) {
+          finishPlanetRevivalAnimation(animation);
+          planetRevivalAnimations.splice(i, 1);
         }
       }
 
@@ -2660,7 +2955,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
             enemy.group.position.addScaledVector(enemyDirection, enemy.speed * delta);
           } else if (!huntsShip && enemy.state === "raiding" && targetRuntime) {
             if (isArmed) {
-              const raidDamage = 0.26 + Math.min(currentWave, 16) * 0.025;
+              const raidDamage = (0.26 + Math.min(currentWave, 16) * 0.025) * planetRaidDamageMultiplier;
               damagePlanet(targetRuntime, delta * raidDamage);
             }
             enemy.group.position.addScaledVector(enemyDirection, Math.sin(elapsed * 2 + enemy.id) * delta * 0.35);
@@ -2886,7 +3181,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
           }
         }
 
-        const sunSafeDistance = 7.8;
+        const sunSafeDistance = SUN_RADIUS + 1.6;
         const sunDistance = ship.position.length();
         if (sunDistance < sunSafeDistance) {
           if (sunDistance < 0.001) {
@@ -2978,7 +3273,10 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
                 runtime.group.getWorldPosition(runtime.worldPosition);
                 const planetHitRadius = runtime.service.size + projectile.radius;
                 if (projectile.mesh.position.distanceToSquared(runtime.worldPosition) < planetHitRadius * planetHitRadius) {
-                  damagePlanet(runtime, projectile.damage * (2 + Math.min(currentWave, 10) * 0.14));
+                  damagePlanet(
+                    runtime,
+                    projectile.damage * (2 + Math.min(currentWave, 10) * 0.14) * planetRaidDamageMultiplier
+                  );
                   removeProjectile(projectile);
                   projectileRemoved = true;
                   break;
@@ -3030,6 +3328,17 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       } else if (lastNearbyKey !== "none") {
         lastNearbyKey = "none";
         setNearby(null);
+      }
+
+      const solarRevival = findNearbySolarRevival();
+      const solarRevivalKey = solarRevival
+        ? `${solarRevival.wave}:${solarRevival.chargeCount}:${solarRevival.lostCount}:${solarRevival.available}:${
+            solarRevival.lockedReason
+          }:${Math.round(solarRevival.distance * 10)}`
+        : "none";
+      if (solarRevivalKey !== lastSolarRevivalKey) {
+        lastSolarRevivalKey = solarRevivalKey;
+        setNearbySolarRevival(solarRevival);
       }
 
       if (dockedTarget.active) {
@@ -3168,6 +3477,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
       renderer.domElement.removeEventListener("pointercancel", onPointerUp);
       renderer.domElement.removeEventListener("contextmenu", onContextMenu);
       bridgeRef.current = null;
+      reviveRandomPlanetRef.current = () => false;
       if (window.__pirxeySpaceDebug === debugApi) {
         delete window.__pirxeySpaceDebug;
       }
@@ -3200,6 +3510,17 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
         ? "Equipped"
         : "Equip";
   const offeredWeaponPriceLabel = offeredWeapon ? `${offeredWeapon.price} cr` : "";
+  const solarRevivalOffer = gamePhase === "Paused" ? null : nearbySolarRevival;
+  const solarRevivalCanBuy = Boolean(solarRevivalOffer?.available);
+  const solarRevivalWaveLabel =
+    solarRevivalOffer && solarRevivalOffer.wave >= SOLAR_REVIVAL_START_WAVE
+      ? `Next charge ${solarRevivalOffer.nextWave}`
+      : `Unlocks wave ${SOLAR_REVIVAL_START_WAVE}`;
+  const solarRevivalChargeCount = solarRevivalOffer?.chargeCount ?? 0;
+  const solarRevivalChargeLabel = `${solarRevivalChargeCount} restore${solarRevivalChargeCount === 1 ? "" : "s"} available`;
+  const solarRevivalDescription = solarRevivalOffer?.available
+    ? `${solarRevivalChargeLabel}. Lost planets: ${solarRevivalOffer.lostCount}.`
+    : `${solarRevivalOffer?.lockedReason ?? `Unlocks at wave ${SOLAR_REVIVAL_START_WAVE}`}. ${solarRevivalChargeLabel}.`;
 
   return (
     <main
@@ -3547,7 +3868,7 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
               <ControlHint icon={<Compass />} label="A / D" value="yaw" />
               <ControlHint icon={<MousePointer2 />} label="Drag" value="look around" />
               <ControlHint icon={<MousePointer2 />} label="V" value="toggle camera" />
-              <ControlHint icon={<Target />} label="R" value={canUseNavigation ? "dock nearby" : "disabled in battle"} />
+              <ControlHint icon={<Target />} label="R" value={canUseNavigation ? "dock nearby" : "use nearby offer"} />
               <ControlHint icon={<Crosshair />} label="Hold Click / F" value="fire cannons" />
               <ControlHint icon={<Zap />} label="Right Click / G" value={activeSecondaryWeapon ? activeSecondaryWeapon.name : "buy secondary"} />
               <ControlHint icon={<Navigation />} label="Space / C" value="vertical" />
@@ -3623,7 +3944,31 @@ export function SpaceExperience({ services }: SpaceExperienceProps) {
           </div>
 
           <div className="pointer-events-none hud-action-slot order-1 flex min-h-[170px] items-end justify-center lg:order-2">
-            {nearbyWeaponOffer && offeredWeapon ? (
+            {solarRevivalOffer ? (
+              <div className={`pointer-events-auto weapon-shop-bubble solar-revival-bubble ${solarRevivalCanBuy ? "" : "is-disabled"}`}>
+                <div className="weapon-shop-copy">
+                  <span>Solar forge - {solarRevivalWaveLabel}</span>
+                  <strong>Revive random planet</strong>
+                  <p>{solarRevivalDescription}</p>
+                </div>
+                <div className="weapon-shop-action">
+                  <div className="weapon-shop-price" aria-label={`Price ${SOLAR_REVIVAL_COST} cr`}>
+                    <span>Price</span>
+                    <strong>{SOLAR_REVIVAL_COST} cr</strong>
+                  </div>
+                  <button
+                    className={!solarRevivalCanBuy ? "is-locked" : ""}
+                    type="button"
+                    aria-disabled={!solarRevivalCanBuy}
+                    onClick={() => reviveRandomPlanetRef.current()}
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    Revive
+                    <span className="weapon-shop-key">R</span>
+                  </button>
+                </div>
+              </div>
+            ) : nearbyWeaponOffer && offeredWeapon ? (
               <div className="pointer-events-auto weapon-shop-bubble">
                 <div className="weapon-shop-copy">
                   <span>{nearbyWeaponOffer.planetName} armory</span>

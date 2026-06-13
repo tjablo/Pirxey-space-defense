@@ -75,8 +75,8 @@ export const WEAPON_CATALOG: Record<WeaponId, WeaponDefinition> = {
     slot: "secondary",
     price: 280,
     ammoCapacity: 22,
-    cooldown: 0.92,
-    description: "Tracking missiles for priority targets."
+    cooldown: 0.95,
+    description: "Twin tracking missiles for priority targets."
   },
   "plasma-orb": {
     id: "plasma-orb",
